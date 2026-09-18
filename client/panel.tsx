@@ -114,15 +114,25 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
     void dashboard.refetch({ cancelRefetch: true });
   }, [dashboard]);
 
-  const submitSearch = useCallback(() => {
-    const trimmed = queryText.trim();
-    setSubmittedQuery(trimmed.length === 0 ? null : trimmed);
-  }, [queryText]);
-
   const exitSearch = useCallback(() => {
     setSubmittedQuery(null);
     setQueryText("");
   }, []);
+
+  const submitSearch = useCallback(() => {
+    const trimmed = queryText.trim();
+    if (trimmed.length === 0) {
+      exitSearch();
+      return;
+    }
+    // Re-submitting the same query must still re-read bv; setting identical
+    // state would otherwise leave the Search button as a no-op.
+    if (trimmed === submittedQuery) {
+      void search.refetch({ cancelRefetch: false });
+      return;
+    }
+    setSubmittedQuery(trimmed);
+  }, [exitSearch, queryText, search.refetch, submittedQuery]);
 
   const clearSelection = useCallback(() => setSelectedId(null), []);
 
@@ -695,7 +705,7 @@ function SearchList({
         styles={styles}
         theme={theme}
         title="Search results"
-        meta={`max ${SEARCH_QUERY_MAX_LENGTH} chars`}
+        meta={search.data?.error === null ? `${search.data.results.length} found` : null}
       />
       {submittedQuery === null ? null : search.isPending ? (
         <Empty styles={styles} theme={theme} message="Searching…" />
