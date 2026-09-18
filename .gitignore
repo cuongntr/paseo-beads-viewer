@@ -1,0 +1,3 @@
+node_modules/
+# bv writes its semantic search index into the repository it analyses.
+.bv/
