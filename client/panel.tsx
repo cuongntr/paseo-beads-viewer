@@ -57,6 +57,9 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   const styles = useMemo(() => createPanelStyles(theme, layout.compact), [theme, layout.compact]);
   const workspaceName = useWorkspace(workspaceId, (workspace) => workspace.name);
   const forceDashboardRefresh = useRef(false);
+  const listScrollRef = useRef<ScrollView | null>(null);
+  const listScrollOffset = useRef(0);
+  const pendingListRestore = useRef(false);
 
   const fetchDashboard = useRpc(dashboardRpc);
   const fetchSearch = useRpc(searchRpc);
@@ -134,7 +137,19 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
     setSubmittedQuery(trimmed);
   }, [exitSearch, queryText, search.refetch, submittedQuery]);
 
-  const clearSelection = useCallback(() => setSelectedId(null), []);
+  const clearSelection = useCallback(() => {
+    if (layout.compact && listScrollOffset.current > 0) pendingListRestore.current = true;
+    setSelectedId(null);
+  }, [layout.compact]);
+
+  const listIdentity = submittedQuery === null ? `view:${viewMode}` : `search:${submittedQuery}`;
+  useEffect(() => {
+    // A different operational view or query is a different list and starts at
+    // the top. Keeping this ref in sync also prevents compact Back from
+    // restoring an offset captured from the previous list.
+    listScrollOffset.current = 0;
+    pendingListRestore.current = false;
+  }, [listIdentity]);
 
   const data = dashboard.data ?? null;
   const authority = data?.source?.authority ?? null;
@@ -206,7 +221,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
             </View>
           </View>
         </View>
-        <ScrollView style={styles.paneScroll} contentContainerStyle={styles.detailContent}>
+        <ScrollView key={selectedId} style={styles.paneScroll} contentContainerStyle={styles.detailContent}>
           <IssueInspectorBody styles={styles} theme={theme} issue={issue} />
         </ScrollView>
       </View>
@@ -320,7 +335,21 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       <View style={styles.screen}>
         {header}
         {requestFailure}
-        <ScrollView style={styles.paneScroll} contentContainerStyle={styles.paneContent}>
+        <ScrollView
+          key={listIdentity}
+          ref={listScrollRef}
+          style={styles.paneScroll}
+          contentContainerStyle={styles.paneContent}
+          onScroll={(event) => {
+            listScrollOffset.current = event.nativeEvent.contentOffset.y;
+          }}
+          onContentSizeChange={() => {
+            if (!pendingListRestore.current) return;
+            listScrollRef.current?.scrollTo({ y: listScrollOffset.current, animated: false });
+            pendingListRestore.current = false;
+          }}
+          scrollEventThrottle={16}
+        >
           {summary}
           <View style={styles.divider} />
           <View style={styles.controlStack}>{masterControls}</View>
@@ -338,12 +367,16 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       <View style={styles.workbench}>
         <View style={styles.masterPane}>
           <View style={styles.masterHeader}>{masterControls}</View>
-          <ScrollView style={styles.paneScroll} contentContainerStyle={styles.paneContent}>
+          <ScrollView
+            key={listIdentity}
+            style={styles.paneScroll}
+            contentContainerStyle={styles.paneContent}
+          >
             {masterList}
           </ScrollView>
         </View>
         <View style={styles.detailPane}>
-          <ScrollView style={styles.paneScroll} contentContainerStyle={styles.detailContent}>
+          <ScrollView key={selectedId ?? "empty"} style={styles.paneScroll} contentContainerStyle={styles.detailContent}>
             {selectedId === null ? (
               <View style={styles.stateBlock}>
                 <SectionHeader styles={styles} theme={theme} title="Issue inspector" />
