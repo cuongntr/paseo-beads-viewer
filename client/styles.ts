@@ -3,11 +3,12 @@ import type { TextStyle, ViewStyle } from "react-native";
 
 /**
  * Visual direction: a quiet dependency console shaped as a workbench. A single
- * vertical status rail carries all state colour; everything beside it is flat,
- * dense text on one surface. On a wide panel the workbench is a fixed-height
- * master/detail pair of independent scroll regions; on a compact panel the
- * detail is a drill-in screen. No cards, no shadows, no gradients, no coloured
- * panels, no hardcoded colours.
+ * vertical rail carries priority colour; status is icon plus text, and metadata
+ * reads as restrained wrapping facets rather than SaaS pills. On a wide panel the
+ * workbench is a fixed-height master/detail pair of independent scroll regions
+ * (master slightly wider in operational views, board-dominant in Board view); on
+ * a compact panel the detail is a drill-in screen. No cards, no shadows, no
+ * gradients, no coloured panels, no hardcoded colours.
  */
 export interface PanelStyles {
   readonly screen: ViewStyle;
@@ -28,6 +29,8 @@ export interface PanelStyles {
   readonly pulseLabel: TextStyle;
   readonly workbench: ViewStyle;
   readonly masterPane: ViewStyle;
+  readonly masterPaneWide: ViewStyle;
+  readonly detailPaneNarrow: ViewStyle;
   readonly masterHeader: ViewStyle;
   readonly controlStack: ViewStyle;
   readonly detailPane: ViewStyle;
@@ -55,6 +58,14 @@ export interface PanelStyles {
   readonly rowMeta: TextStyle;
   readonly rowNote: TextStyle;
   readonly metaRow: ViewStyle;
+  readonly facetRow: ViewStyle;
+  readonly facet: ViewStyle;
+  readonly facetIdent: ViewStyle;
+  readonly facetText: TextStyle;
+  readonly facetIdentText: TextStyle;
+  readonly facetDot: ViewStyle;
+  readonly facetStrongText: TextStyle;
+  readonly facetLabel: TextStyle;
   readonly tagText: TextStyle;
   readonly divider: ViewStyle;
   readonly body: TextStyle;
@@ -68,6 +79,52 @@ export interface PanelStyles {
   readonly detailLabel: TextStyle;
   readonly detailText: TextStyle;
   readonly monoMeta: TextStyle;
+  readonly detailTitle: TextStyle;
+  readonly detailHeadBlock: ViewStyle;
+  readonly detailSection: ViewStyle;
+  readonly detailSectionLabel: TextStyle;
+  readonly commentBlock: ViewStyle;
+  readonly commentByline: TextStyle;
+  readonly markdownStack: ViewStyle;
+  readonly markdownParagraph: TextStyle;
+  readonly markdownHeading1: TextStyle;
+  readonly markdownHeading2: TextStyle;
+  readonly markdownHeading3: TextStyle;
+  readonly markdownStrong: TextStyle;
+  readonly markdownEmphasis: TextStyle;
+  readonly markdownInlineCode: TextStyle;
+  readonly markdownLink: TextStyle;
+  readonly markdownLinkTarget: TextStyle;
+  readonly markdownListRow: ViewStyle;
+  readonly markdownListMarker: TextStyle;
+  readonly markdownListText: TextStyle;
+  readonly markdownTaskMark: ViewStyle;
+  readonly markdownQuote: ViewStyle;
+  readonly markdownQuoteText: TextStyle;
+  readonly markdownRule: ViewStyle;
+  readonly markdownCodeBlock: ViewStyle;
+  readonly markdownCodeLanguage: TextStyle;
+  readonly markdownCodeText: TextStyle;
+  readonly markdownTruncated: TextStyle;
+  readonly boardPane: ViewStyle;
+  readonly boardStack: ViewStyle;
+  readonly boardScroll: ViewStyle;
+  readonly boardHeader: ViewStyle;
+  readonly boardHeaderStacked: ViewStyle;
+  readonly boardLaneRow: ViewStyle;
+  readonly boardLane: ViewStyle;
+  readonly boardLaneStacked: ViewStyle;
+  readonly boardLaneHeader: ViewStyle;
+  readonly boardLaneTitle: TextStyle;
+  readonly boardLaneCount: TextStyle;
+  readonly boardLaneBody: ViewStyle;
+  readonly boardCard: ViewStyle;
+  readonly boardCardSelected: ViewStyle;
+  readonly boardCardRail: ViewStyle;
+  readonly boardCardBody: ViewStyle;
+  readonly boardCardTitle: TextStyle;
+  readonly statusChip: ViewStyle;
+  readonly statusChipText: TextStyle;
 }
 
 /** Widest comfortable measure for prose-heavy inspector content. */
@@ -118,12 +175,19 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     pulseValue: { color: theme.colors.foreground, fontSize: compact ? 19 : 22, fontWeight: "600" },
     pulseLabel: { color: theme.colors.foregroundMuted, fontSize: 10 },
     workbench: { flex: 1, flexDirection: "row" },
+    /**
+     * Operational views put the working list first: 5:4 favours the master pane
+     * without starving the inspector.
+     */
     masterPane: {
-      flex: 4,
+      flex: 5,
       minWidth: 0,
       borderRightWidth: 1,
       borderRightColor: theme.colors.border,
     },
+    /** Board view: the lanes need the width, the inspector stays reachable. */
+    masterPaneWide: { flex: 7 },
+    detailPaneNarrow: { flex: 3 },
     masterHeader: {
       paddingHorizontal: gutter,
       paddingTop: 14,
@@ -133,7 +197,7 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
       borderBottomColor: theme.colors.border,
     },
     controlStack: { gap: 12, paddingBottom: 4 },
-    detailPane: { flex: 5, minWidth: 0 },
+    detailPane: { flex: 4, minWidth: 0 },
     paneScroll: { flex: 1 },
     paneContent: { paddingHorizontal: gutter, paddingTop: rowGap, paddingBottom: gutter * 2, gap: rowGap },
     detailContent: {
@@ -184,10 +248,31 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     railRowSelected: { backgroundColor: theme.colors.surface1 },
     rail: { width: 3, borderRadius: 2, alignSelf: "stretch", minHeight: 20 },
     railBody: { flex: 1, gap: 3 },
-    rowTitle: { color: theme.colors.foreground, fontSize: 13, lineHeight: 18 },
+    rowTitle: { color: theme.colors.foreground, fontSize: 13, lineHeight: 18, fontWeight: "600" },
     rowMeta: { color: theme.colors.foregroundMuted, fontSize: 10 },
     rowNote: { color: theme.colors.foregroundMuted, fontSize: 11, lineHeight: 16 },
     metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+    /** Structured facets replace dot-joined metadata; they wrap instead of truncating. */
+    facetRow: { flexDirection: "row", flexWrap: "wrap", columnGap: 10, rowGap: 4, alignItems: "center" },
+    facet: { flexDirection: "row", alignItems: "center", gap: 4 },
+    /** Only the identifier gets a container, so it anchors the row without noise. */
+    facetIdent: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 3,
+      backgroundColor: theme.colors.surface1,
+    },
+    facetText: { color: theme.colors.foregroundMuted, fontSize: 10 },
+    facetIdentText: { color: theme.colors.foreground, fontSize: 10, fontWeight: "600" },
+    /** The priority swatch: the only colour a facet row carries. */
+    facetDot: { width: 6, height: 6, borderRadius: 3 },
+    facetStrongText: { color: theme.colors.foreground, fontSize: 10, fontWeight: "600" },
+    facetLabel: { color: theme.colors.foregroundMuted, fontSize: 9, letterSpacing: 0.3 },
     tagText: { color: theme.colors.foregroundMuted, fontSize: 10 },
     divider: { height: 1, backgroundColor: theme.colors.border, opacity: 0.6 },
     body: { color: theme.colors.foreground, fontSize: 12, lineHeight: 18 },
@@ -217,5 +302,152 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     },
     detailText: { color: theme.colors.foreground, fontSize: 12, lineHeight: 18 },
     monoMeta: { color: theme.colors.foregroundMuted, fontSize: 10 },
+    detailTitle: {
+      color: theme.colors.foreground,
+      fontSize: compact ? 17 : 19,
+      lineHeight: compact ? 23 : 26,
+      fontWeight: "700",
+    },
+    detailHeadBlock: { gap: 8, paddingBottom: 4 },
+    detailSection: {
+      gap: 6,
+      paddingTop: compact ? 12 : 14,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    detailSectionLabel: {
+      color: theme.colors.foregroundMuted,
+      fontSize: 10,
+      fontWeight: "700",
+      letterSpacing: 0.5,
+    },
+    commentBlock: { gap: 3, paddingTop: 8 },
+    commentByline: { color: theme.colors.foregroundMuted, fontSize: 10, fontWeight: "600" },
+    markdownStack: { gap: 6 },
+    markdownParagraph: { color: theme.colors.foreground, fontSize: 12, lineHeight: 19 },
+    markdownHeading1: {
+      color: theme.colors.foreground,
+      fontSize: 14,
+      lineHeight: 20,
+      fontWeight: "700",
+      paddingTop: 4,
+    },
+    markdownHeading2: {
+      color: theme.colors.foreground,
+      fontSize: 13,
+      lineHeight: 19,
+      fontWeight: "700",
+      paddingTop: 4,
+    },
+    markdownHeading3: {
+      color: theme.colors.foregroundMuted,
+      fontSize: 12,
+      lineHeight: 18,
+      fontWeight: "700",
+      letterSpacing: 0.3,
+      paddingTop: 2,
+    },
+    markdownStrong: { fontWeight: "700" },
+    markdownEmphasis: { fontStyle: "italic" },
+    markdownInlineCode: {
+      color: theme.colors.foreground,
+      backgroundColor: theme.colors.surface2,
+      fontFamily: "monospace",
+      fontSize: 11,
+    },
+    markdownLink: { color: theme.colors.accent, fontSize: 12, lineHeight: 19 },
+    markdownLinkTarget: { color: theme.colors.foregroundMuted, fontSize: 10 },
+    markdownListRow: { flexDirection: "row", gap: 6, alignItems: "flex-start" },
+    markdownListMarker: {
+      color: theme.colors.foregroundMuted,
+      fontSize: 12,
+      lineHeight: 19,
+      minWidth: 16,
+    },
+    markdownListText: { flex: 1, color: theme.colors.foreground, fontSize: 12, lineHeight: 19 },
+    markdownTaskMark: { minWidth: 16, paddingTop: 3 },
+    markdownQuote: {
+      borderLeftWidth: 2,
+      borderLeftColor: theme.colors.border,
+      paddingLeft: 8,
+      paddingVertical: 2,
+    },
+    markdownQuoteText: {
+      color: theme.colors.foregroundMuted,
+      fontSize: 12,
+      lineHeight: 19,
+      fontStyle: "italic",
+    },
+    markdownRule: { height: 1, backgroundColor: theme.colors.border, marginVertical: 4 },
+    markdownCodeBlock: {
+      gap: 1,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 4,
+      backgroundColor: theme.colors.surface1,
+    },
+    markdownCodeLanguage: { color: theme.colors.foregroundMuted, fontSize: 9, letterSpacing: 0.4 },
+    markdownCodeText: {
+      color: theme.colors.foreground,
+      fontFamily: "monospace",
+      fontSize: 11,
+      lineHeight: 16,
+    },
+    markdownTruncated: { color: theme.colors.foregroundMuted, fontSize: 10, fontStyle: "italic" },
+    boardPane: { flex: 1, minWidth: 0 },
+    /** Compact board: laid out inside the page scroll, so no flex height. */
+    boardStack: { gap: 14 },
+    boardScroll: { flex: 1 },
+    /** Compact reuses the page gutter, so only the vertical rhythm is set here. */
+    boardHeaderStacked: { gap: 4, paddingBottom: 4 },
+    boardHeader: {
+      paddingHorizontal: gutter,
+      paddingTop: 14,
+      paddingBottom: 10,
+      gap: 4,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    /** Non-compact: fixed-width lanes inside one horizontal scroll region. */
+    boardLaneRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: gutter },
+    boardLane: {
+      width: 236,
+      gap: 8,
+      paddingRight: 12,
+      borderRightWidth: 1,
+      borderRightColor: theme.colors.border,
+    },
+    /** Compact: full-width stacked lane sections instead of narrow columns. */
+    boardLaneStacked: { gap: 8, paddingTop: 4 },
+    boardLaneHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingBottom: 2 },
+    boardLaneTitle: {
+      color: theme.colors.foreground,
+      fontSize: 11,
+      fontWeight: "700",
+      letterSpacing: 0.4,
+    },
+    boardLaneCount: { color: theme.colors.foregroundMuted, fontSize: 10 },
+    boardLaneBody: { gap: 6 },
+    boardCard: {
+      flexDirection: "row",
+      gap: 10,
+      minHeight: hitHeight,
+      paddingVertical: 8,
+      paddingRight: 8,
+      paddingLeft: 0,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 4,
+      backgroundColor: theme.colors.surface1,
+      overflow: "hidden",
+    },
+    boardCardSelected: { backgroundColor: theme.colors.surface2, borderColor: theme.colors.accent },
+    boardCardRail: { width: 3, alignSelf: "stretch" },
+    boardCardBody: { flex: 1, gap: 5 },
+    boardCardTitle: { color: theme.colors.foreground, fontSize: 12, lineHeight: 17, fontWeight: "600" },
+    statusChip: { flexDirection: "row", alignItems: "center", gap: 4 },
+    statusChipText: { color: theme.colors.foreground, fontSize: 10, fontWeight: "600" },
   };
 }

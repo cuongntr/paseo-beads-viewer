@@ -19,7 +19,11 @@ export function toneColor(theme: PluginTheme, tone: Tone): string {
   }
 }
 
-/** Beads statuses are opaque; only well-known values get a tone. */
+/**
+ * Beads statuses are opaque and carry no colour of their own: the row rail is
+ * priority-encoded, so status is expressed as {@link statusIconName} plus text.
+ * This mapping exists only for the few places that still need a status accent.
+ */
 export function statusTone(status: string): Tone {
   switch (status.toLowerCase()) {
     case "closed":
@@ -36,6 +40,66 @@ export function statusTone(status: string): Tone {
     default:
       return "neutral";
   }
+}
+
+/**
+ * Priority is the primary colour encoding for issue rows and cards: it is the
+ * only ranking `bv` reports that is comparable across opaque statuses.
+ */
+export function priorityTone(priority: number | null): Tone {
+  if (priority === null) return "neutral";
+  if (priority <= 0) return "danger";
+  if (priority === 1) return "warning";
+  if (priority === 2) return "accent";
+  return "neutral";
+}
+
+/**
+ * Lucide icon name for an opaque Beads status. Status is conveyed by icon plus
+ * text, never by colour, so priority keeps the colour channel to itself.
+ */
+export function statusIconName(status: string): string {
+  switch (status.trim().toLowerCase()) {
+    case "in_progress":
+    case "in progress":
+    case "in-progress":
+    case "active":
+    case "doing":
+    case "started":
+      return "Play";
+    case "blocked":
+    case "waiting":
+    case "on_hold":
+    case "on hold":
+      return "CircleSlash";
+    case "ready":
+    case "actionable":
+      return "CircleDot";
+    case "open":
+    case "todo":
+    case "to_do":
+    case "to do":
+    case "backlog":
+    case "new":
+      return "Circle";
+    case "closed":
+    case "done":
+    case "completed":
+    case "resolved":
+      return "CircleCheck";
+    case "cancelled":
+    case "canceled":
+      return "CircleX";
+    default:
+      return "CircleDashed";
+  }
+}
+
+/** Display form of an opaque status: underscores and dashes read as spaces. */
+export function statusLabel(status: string): string {
+  const trimmed = status.trim();
+  if (trimmed.length === 0) return "unknown";
+  return trimmed.replace(/[_-]+/g, " ");
 }
 
 export function severityTone(severity: string): Tone {

@@ -17,6 +17,8 @@ import {
   takeDashboardRefresh,
   takeIssueFocus,
 } from "./focus";
+import { buildBoard, type BoardModel } from "./board";
+import { BoardView } from "./board-view";
 import { authorityLabel, authorityTone, errorLabel, relativeAge, shortHash, toneColor } from "./format";
 import {
   AlertRow,
@@ -40,7 +42,10 @@ type Selection = string | null;
 type SubmittedQuery = string | null;
 
 /** Mutually exclusive operational modes of the master pane. */
-type ViewMode = "next" | "plan" | "risks";
+type ViewMode = "next" | "plan" | "risks" | "board";
+
+/** The list-shaped views; `board` has its own component and pane proportions. */
+type OperationalMode = Exclude<ViewMode, "board">;
 
 interface ViewSpec {
   readonly mode: ViewMode;
@@ -166,6 +171,11 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
     ].filter((part): part is string => part !== null && part.length > 0);
     return parts.join("  ·  ");
   }, [dashboard.isPending, data, workspaceName, workspaceId]);
+
+  // Derived above every early return so hook order stays stable across states.
+  const boardModel = useMemo(() => boardFor(data), [data]);
+  const boardMissingSources = useMemo(() => boardGaps(data), [data]);
+  const boardActive = submittedQuery === null && viewMode === "board";
 
   const views: readonly ViewSpec[] = useMemo(() => viewSpecs(data), [data]);
   const activeViewLabel = views.find((view) => view.mode === viewMode)?.label ?? "Next up";
@@ -310,6 +320,19 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
     </>
   );
 
+  const board = (
+    <BoardView
+      styles={styles}
+      theme={theme}
+      board={boardModel}
+      compact={layout.compact}
+      totalTracked={data.counts?.total ?? null}
+      missingSources={boardMissingSources}
+      selectedId={selectedId}
+      onSelect={setSelectedId}
+    />
+  );
+
   const masterList = searchActive ? (
     <SearchList
       styles={styles}
@@ -319,7 +342,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       selectedId={selectedId}
       onSelect={setSelectedId}
     />
-  ) : (
+  ) : viewMode === "board" ? null : (
     <OperationalView
       styles={styles}
       theme={theme}
@@ -353,7 +376,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
           {summary}
           <View style={styles.divider} />
           <View style={styles.controlStack}>{masterControls}</View>
-          {masterList}
+          {boardActive ? board : masterList}
         </ScrollView>
       </View>
     );
@@ -365,17 +388,22 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       {requestFailure}
       <View style={styles.summaryBar}>{summary}</View>
       <View style={styles.workbench}>
-        <View style={styles.masterPane}>
+        {/* Board view needs the width; operational views favour the working list 5:4. */}
+        <View style={[styles.masterPane, boardActive ? styles.masterPaneWide : null]}>
           <View style={styles.masterHeader}>{masterControls}</View>
-          <ScrollView
-            key={listIdentity}
-            style={styles.paneScroll}
-            contentContainerStyle={styles.paneContent}
-          >
-            {masterList}
-          </ScrollView>
+          {boardActive ? (
+            board
+          ) : (
+            <ScrollView
+              key={listIdentity}
+              style={styles.paneScroll}
+              contentContainerStyle={styles.paneContent}
+            >
+              {masterList}
+            </ScrollView>
+          )}
         </View>
-        <View style={styles.detailPane}>
+        <View style={[styles.detailPane, boardActive ? styles.detailPaneNarrow : null]}>
           <ScrollView key={selectedId ?? "empty"} style={styles.paneScroll} contentContainerStyle={styles.detailContent}>
             {selectedId === null ? (
               <View style={styles.stateBlock}>
@@ -462,6 +490,7 @@ function viewSpecs(data: DashboardResult | null): readonly ViewSpec[] {
       { mode: "next", label: "Next up", count: null },
       { mode: "plan", label: "Plan", count: null },
       { mode: "risks", label: "Risks", count: null },
+      { mode: "board", label: "Board", count: null },
     ];
   }
   const triageOk = data.sections.triage.status === "ok";
@@ -472,7 +501,35 @@ function viewSpecs(data: DashboardResult | null): readonly ViewSpec[] {
     { mode: "next", label: "Next up", count: triageOk ? data.recommendations.length : null },
     { mode: "plan", label: "Plan", count: data.sections.plan.status === "ok" ? data.tracks.length : null },
     { mode: "risks", label: "Risks", count: riskCount },
+    {
+      mode: "board",
+      label: "Board",
+      // The board is a working set: its count is the deduplicated union of the
+      // sections that actually loaded, not the project total.
+      count: !triageOk && data.sections.plan.status !== "ok" ? null : boardFor(data).surfaced,
+    },
   ];
+}
+
+/**
+ * The board's working set: the deduplicated union of the sections that actually
+ * loaded. A degraded section contributes nothing rather than an invented lane.
+ */
+function boardFor(data: DashboardResult | null): BoardModel {
+  if (data === null) return buildBoard([], []);
+  return buildBoard(
+    data.sections.triage.status === "ok" ? data.recommendations : [],
+    data.sections.plan.status === "ok" ? data.tracks : [],
+  );
+}
+
+/** Human-readable names of the board sources `bv` could not provide. */
+function boardGaps(data: DashboardResult | null): readonly string[] {
+  if (data === null) return [];
+  return [
+    data.sections.triage.status === "ok" ? null : "triage picks",
+    data.sections.plan.status === "ok" ? null : "execution tracks",
+  ].filter((part): part is string => part !== null);
 }
 
 function ViewSwitcher({
@@ -580,7 +637,7 @@ function OperationalView({
   styles: PanelStyles;
   theme: PluginWorkspacePanelProps["theme"];
   data: DashboardResult;
-  viewMode: ViewMode;
+  viewMode: OperationalMode;
   selectedId: Selection;
   onSelect: (issueId: string) => void;
 }) {

@@ -5,9 +5,12 @@ import {
   authorityTone,
   errorLabel,
   priorityLabel,
+  priorityTone,
   relativeAge,
   severityTone,
   shortHash,
+  statusIconName,
+  statusLabel,
   statusTone,
   toneColor,
 } from "../client/format";
@@ -82,6 +85,32 @@ describe("status and severity tones", () => {
     expect(statusTone("blocked")).toBe("danger");
     expect(statusTone("open")).toBe("neutral");
     expect(statusTone("awaiting_review")).toBe("neutral");
+  });
+
+  it("encodes priority as the primary tone with lower priorities neutral", () => {
+    expect(priorityTone(0)).toBe("danger");
+    expect(priorityTone(1)).toBe("warning");
+    expect(priorityTone(2)).toBe("accent");
+    expect(priorityTone(3)).toBe("neutral");
+    expect(priorityTone(9)).toBe("neutral");
+    expect(priorityTone(null)).toBe("neutral");
+  });
+
+  it("names a Lucide status icon for known and unknown statuses", () => {
+    expect(statusIconName("in_progress")).toBe("Play");
+    expect(statusIconName("In Progress")).toBe("Play");
+    expect(statusIconName("blocked")).toBe("CircleSlash");
+    expect(statusIconName("ready")).toBe("CircleDot");
+    expect(statusIconName("open")).toBe("Circle");
+    expect(statusIconName("closed")).toBe("CircleCheck");
+    expect(statusIconName("cancelled")).toBe("CircleX");
+    expect(statusIconName("awaiting_review")).toBe("CircleDashed");
+  });
+
+  it("labels opaque statuses readably", () => {
+    expect(statusLabel("in_progress")).toBe("in progress");
+    expect(statusLabel("needs-review")).toBe("needs review");
+    expect(statusLabel("  ")).toBe("unknown");
   });
 
   it("maps known severities and leaves unknown ones neutral", () => {

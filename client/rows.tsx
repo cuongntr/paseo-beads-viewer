@@ -1,15 +1,19 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import { Icon } from "@getpaseo/plugin/client/react-native";
 import { type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { Alert, Blocker, IssueDetail, Recommendation, SearchResult, Track } from "../shared/beads";
 import {
   alertHeadline,
   priorityLabel,
+  priorityTone,
   severityTone,
-  statusTone,
+  statusIconName,
+  statusLabel,
   toneColor,
   type Tone,
 } from "./format";
+import { MarkdownView } from "./markdown-view";
 import type { PanelStyles } from "./styles";
 
 interface Common {
@@ -26,9 +30,65 @@ export function SectionHeader({ styles, title, meta }: Common & { title: string;
   );
 }
 
+/** The issue identifier: the one facet that gets a container so it anchors a row. */
+export function IdentFacet({ styles, id }: Common & { id: string }) {
+  return (
+    <View style={styles.facetIdent}>
+      <Text style={styles.facetIdentText}>{id}</Text>
+    </View>
+  );
+}
+
 /**
- * The one shared row shape: a coloured status rail plus dense text. Every list in
- * the panel uses it so state reads vertically at a glance.
+ * Status as icon plus text. Status never carries colour — priority owns the
+ * colour channel — so the icon is drawn in the muted foreground.
+ */
+export function StatusFacet({ styles, theme, status }: Common & { status: string }) {
+  return (
+    <View style={styles.statusChip}>
+      <Icon name={statusIconName(status)} size={12} color={theme.colors.foregroundMuted} />
+      <Text style={styles.statusChipText}>{statusLabel(status)}</Text>
+    </View>
+  );
+}
+
+/** Priority as its tone colour plus its label; renders nothing when absent. */
+export function PriorityFacet({ styles, theme, priority }: Common & { priority: number | null }) {
+  const label = priorityLabel(priority);
+  if (label === null) return null;
+  return (
+    <View style={styles.facet}>
+      <View style={[styles.facetDot, { backgroundColor: toneColor(theme, priorityTone(priority)) }]} />
+      <Text style={styles.facetStrongText}>{label}</Text>
+    </View>
+  );
+}
+
+/** A plain `label value` facet. Renders nothing when the value is absent. */
+export function Facet({
+  styles,
+  label,
+  value,
+  strong,
+}: Common & { label?: string; value: string | null; strong?: boolean }) {
+  if (value === null || value.length === 0) return null;
+  return (
+    <View style={styles.facet}>
+      {label === undefined ? null : <Text style={styles.facetLabel}>{label}</Text>}
+      <Text style={strong === true ? styles.facetStrongText : styles.facetText}>{value}</Text>
+    </View>
+  );
+}
+
+/** Wrapping container for facets; keeps every list row on the same metadata grid. */
+export function FacetRow({ styles, children }: Common & { children: ReactNode }) {
+  return <View style={styles.facetRow}>{children}</View>;
+}
+
+/**
+ * The one shared row shape: a coloured rail plus a bold title, a structured facet
+ * row, and an optional note. The rail encodes priority for issue rows and
+ * severity/risk where no priority exists.
  */
 export function RailRow({
   styles,
@@ -36,6 +96,7 @@ export function RailRow({
   tone,
   title,
   meta,
+  facets,
   note,
   selected,
   accessibilityLabel,
@@ -45,6 +106,8 @@ export function RailRow({
   tone: Tone;
   title: string;
   meta?: string | null;
+  /** Structured facets; preferred over `meta` for issue-shaped rows. */
+  facets?: ReactNode;
   note?: string | null;
   selected?: boolean;
   accessibilityLabel?: string;
@@ -56,6 +119,7 @@ export function RailRow({
       <Text style={styles.rowTitle} numberOfLines={2}>
         {title}
       </Text>
+      {facets === undefined || facets === null ? null : <View style={styles.facetRow}>{facets}</View>}
       {meta === undefined || meta === null ? null : <Text style={styles.rowMeta}>{meta}</Text>}
       {note === undefined || note === null ? null : (
         <Text style={styles.rowNote} numberOfLines={2}>
@@ -107,16 +171,6 @@ export function RecommendationRow({
   selected: boolean;
   onSelect: (issueId: string) => void;
 }) {
-  const meta = [
-    recommendation.id,
-    recommendation.status,
-    priorityLabel(recommendation.priority),
-    recommendation.assignee === null ? null : `@${recommendation.assignee}`,
-    recommendation.claimable ? "claimable" : "not claimable",
-  ]
-    .filter((part): part is string => part !== null)
-    .join("  ·  ");
-
   const note = [
     recommendation.blockedBy.length === 0 ? null : `blocked by ${recommendation.blockedBy.join(", ")}`,
     recommendation.unblocks.length === 0 ? null : `unblocks ${recommendation.unblocks.join(", ")}`,
@@ -129,12 +183,40 @@ export function RecommendationRow({
     <RailRow
       styles={styles}
       theme={theme}
-      tone={recommendation.blockedBy.length > 0 ? "warning" : statusTone(recommendation.status)}
+      tone={priorityTone(recommendation.priority)}
       title={recommendation.title}
-      meta={meta}
+      facets={
+        <>
+          <IdentFacet styles={styles} theme={theme} id={recommendation.id} />
+          <StatusFacet styles={styles} theme={theme} status={recommendation.status} />
+          <PriorityFacet styles={styles} theme={theme} priority={recommendation.priority} />
+          <Facet
+            styles={styles}
+            theme={theme}
+            value={recommendation.assignee === null ? null : `@${recommendation.assignee}`}
+          />
+          <Facet styles={styles} theme={theme} value={recommendation.type} />
+          <Facet
+            styles={styles}
+            theme={theme}
+            value={recommendation.claimable ? "claimable" : "not claimable"}
+          />
+        </>
+      }
       note={note.length === 0 ? null : note}
       selected={selected}
-      accessibilityLabel={`Show details for ${recommendation.id}, ${recommendation.title}, status ${recommendation.status}`}
+      accessibilityLabel={accessibilityFacts([
+        `${recommendation.id}, ${recommendation.title}`,
+        `status ${statusLabel(recommendation.status)}`,
+        priorityLabel(recommendation.priority) === null
+          ? "no priority"
+          : `priority ${priorityLabel(recommendation.priority)}`,
+        recommendation.assignee === null ? null : `assigned to ${recommendation.assignee}`,
+        recommendation.type,
+        recommendation.claimable ? "claimable" : "not claimable",
+        recommendation.blockedBy.length === 0 ? null : `blocked by ${recommendation.blockedBy.length}`,
+        recommendation.unblocks.length === 0 ? null : `unblocks ${recommendation.unblocks.length}`,
+      ])}
       onPress={() => onSelect(recommendation.id)}
     />
   );
@@ -158,13 +240,28 @@ export function TrackBlock({
           key={`${track.id}:${item.id}`}
           styles={styles}
           theme={theme}
-          tone={statusTone(item.status)}
+          tone={priorityTone(item.priority)}
           title={item.title}
-          meta={[item.id, item.status, priorityLabel(item.priority)]
-            .filter((part): part is string => part !== null)
-            .join("  ·  ")}
+          facets={
+            <>
+              <IdentFacet styles={styles} theme={theme} id={item.id} />
+              <StatusFacet styles={styles} theme={theme} status={item.status} />
+              <PriorityFacet styles={styles} theme={theme} priority={item.priority} />
+              <Facet
+                styles={styles}
+                theme={theme}
+                value={item.unblocks.length === 0 ? null : `unblocks ${item.unblocks.length}`}
+              />
+            </>
+          }
           selected={selectedId === item.id}
-          accessibilityLabel={`Show details for ${item.id} in ${track.id}`}
+          accessibilityLabel={accessibilityFacts([
+            `${item.id}, ${item.title}`,
+            `in ${track.id}`,
+            `status ${statusLabel(item.status)}`,
+            priorityLabel(item.priority) === null ? "no priority" : `priority ${priorityLabel(item.priority)}`,
+            item.unblocks.length === 0 ? null : `unblocks ${item.unblocks.length}`,
+          ])}
           onPress={() => onSelect(item.id)}
         />
       ))}
@@ -183,12 +280,27 @@ export function BlockerRow({
     <RailRow
       styles={styles}
       theme={theme}
+      // A Blocker carries no priority and no status, so risk keeps the colour here.
       tone={blocker.actionable ? "warning" : "danger"}
       title={blocker.title}
-      meta={`${blocker.id}  ·  unblocks ${blocker.unblocksCount}  ·  ${blocker.actionable ? "actionable" : "not actionable"}`}
+      facets={
+        <>
+          <IdentFacet styles={styles} theme={theme} id={blocker.id} />
+          <Facet styles={styles} theme={theme} value={`unblocks ${blocker.unblocksCount}`} strong />
+          <Facet
+            styles={styles}
+            theme={theme}
+            value={blocker.actionable ? "actionable" : "not actionable"}
+          />
+        </>
+      }
       note={blocker.unblocks.length === 0 ? null : blocker.unblocks.join(", ")}
       selected={selectedId === blocker.id}
-      accessibilityLabel={`Show details for blocker ${blocker.id}`}
+      accessibilityLabel={accessibilityFacts([
+        `blocker ${blocker.id}, ${blocker.title}`,
+        `unblocks ${blocker.unblocksCount}`,
+        blocker.actionable ? "actionable" : "not actionable",
+      ])}
       onPress={() => onSelect(blocker.id)}
     />
   );
@@ -201,8 +313,15 @@ export function AlertRow({
   selectedId,
   onSelect,
 }: Common & { alert: Alert; selectedId: string | null; onSelect: (issueId: string) => void }) {
+  // Alerts have severity but no priority, so severity keeps the colour channel.
   const tone = severityTone(alert.severity);
-  const meta = `${alert.severity}  ·  ${alert.type}`;
+  const facets = (
+    <>
+      {alert.issueId === null ? null : <IdentFacet styles={styles} theme={theme} id={alert.issueId} />}
+      <Facet styles={styles} theme={theme} value={alert.severity} strong />
+      <Facet styles={styles} theme={theme} value={alert.type} />
+    </>
+  );
   if (alert.issueId === null) {
     return (
       <RailRow
@@ -210,7 +329,7 @@ export function AlertRow({
         theme={theme}
         tone={tone}
         title={alert.message}
-        meta={meta}
+        facets={facets}
         note={alert.suggestedAction}
       />
     );
@@ -221,10 +340,15 @@ export function AlertRow({
       theme={theme}
       tone={tone}
       title={alertHeadline(alert)}
-      meta={meta}
+      facets={facets}
       note={alert.suggestedAction}
       selected={selectedId === alert.issueId}
-      accessibilityLabel={`Show details for ${alert.issueId}, ${alert.severity} alert`}
+      accessibilityLabel={accessibilityFacts([
+        `${alert.issueId}, ${alert.message}`,
+        `${alert.severity} alert`,
+        alert.type,
+        alert.suggestedAction,
+      ])}
       onPress={() => onSelect(alert.issueId ?? "")}
     />
   );
@@ -241,79 +365,131 @@ export function SearchResultRow({
     <RailRow
       styles={styles}
       theme={theme}
+      // Search results carry neither priority nor status; accent marks relevance.
       tone="accent"
       title={result.title}
-      meta={[result.id, result.score === null ? null : `score ${result.score.toFixed(3)}`]
-        .filter((part): part is string => part !== null)
-        .join("  ·  ")}
+      facets={
+        <>
+          <IdentFacet styles={styles} theme={theme} id={result.id} />
+          <Facet
+            styles={styles}
+            theme={theme}
+            label="score"
+            value={result.score === null ? null : result.score.toFixed(3)}
+          />
+        </>
+      }
       selected={selectedId === result.id}
-      accessibilityLabel={`Show details for search result ${result.id}`}
+      accessibilityLabel={accessibilityFacts([
+        `search result ${result.id}, ${result.title}`,
+        result.score === null ? null : `score ${result.score.toFixed(3)}`,
+      ])}
       onPress={() => onSelect(result.id)}
     />
   );
 }
 
-function DetailBlock({ styles, label, value }: Common & { label: string; value: string | null }) {
-  if (value === null) return null;
+/** A titled inspector section whose body is rendered as bounded Markdown. */
+function DetailSection({ styles, theme, label, value }: Common & { label: string; value: string | null }) {
+  if (value === null || value.trim().length === 0) return null;
   return (
-    <View style={styles.detailBlock}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailText}>{value}</Text>
+    <View style={styles.detailSection}>
+      <Text style={styles.detailSectionLabel}>{label}</Text>
+      <MarkdownView styles={styles} theme={theme} source={value} />
     </View>
   );
 }
 
 export function IssueDetailView({ styles, theme, issue }: Common & { issue: IssueDetail }) {
-  const facts = [
-    issue.id,
-    issue.status,
-    issue.type,
-    priorityLabel(issue.priority),
-    issue.assignee === null ? null : `@${issue.assignee}`,
+  const relations = [
+    issue.parent === null ? null : `parent ${issue.parent}`,
+    issue.labels.length === 0 ? null : `labels ${issue.labels.join(", ")}`,
+    issue.dependencies.length === 0
+      ? null
+      : `depends on ${issue.dependencies.map(refLabel).join(", ")}`,
+    issue.dependents.length === 0 ? null : `blocks ${issue.dependents.map(refLabel).join(", ")}`,
+  ].filter((part): part is string => part !== null);
+
+  const timestamps = [
+    issue.createdAt === null ? null : `created ${issue.createdAt}`,
+    issue.updatedAt === null ? null : `updated ${issue.updatedAt}`,
+    issue.closedAt === null ? null : `closed ${issue.closedAt}`,
+    issue.closeReason === null ? null : `reason ${issue.closeReason}`,
   ]
     .filter((part): part is string => part !== null)
     .join("  ·  ");
 
   return (
     <View style={styles.detailStack}>
-      <RailRow styles={styles} theme={theme} tone={statusTone(issue.status)} title={issue.title} meta={facts} />
-      {issue.labels.length === 0 ? null : (
-        <Text style={styles.tagText}>labels: {issue.labels.join(", ")}</Text>
-      )}
-      {issue.parent === null ? null : <Text style={styles.tagText}>parent: {issue.parent}</Text>}
-      {issue.dependencies.length === 0 ? null : (
-        <Text style={styles.tagText}>
-          depends on: {issue.dependencies.map((ref) => `${ref.id}${ref.status === null ? "" : ` (${ref.status})`}`).join(", ")}
+      <View style={styles.detailHeadBlock}>
+        <Text
+          style={styles.detailTitle}
+          accessibilityRole="header"
+          accessibilityLabel={accessibilityFacts([
+            issue.title,
+            issue.id,
+            `status ${statusLabel(issue.status)}`,
+            priorityLabel(issue.priority) === null ? "no priority" : `priority ${priorityLabel(issue.priority)}`,
+            issue.type,
+            issue.assignee === null ? null : `assigned to ${issue.assignee}`,
+          ])}
+        >
+          {issue.title}
         </Text>
-      )}
-      {issue.dependents.length === 0 ? null : (
-        <Text style={styles.tagText}>
-          blocks: {issue.dependents.map((ref) => `${ref.id}${ref.status === null ? "" : ` (${ref.status})`}`).join(", ")}
-        </Text>
-      )}
-      <DetailBlock styles={styles} theme={theme} label="Description" value={issue.description} />
-      <DetailBlock styles={styles} theme={theme} label="Design" value={issue.design} />
-      <DetailBlock styles={styles} theme={theme} label="Acceptance criteria" value={issue.acceptanceCriteria} />
-      <DetailBlock styles={styles} theme={theme} label="Notes" value={issue.notes} />
+        <View style={styles.facetRow}>
+          <IdentFacet styles={styles} theme={theme} id={issue.id} />
+          <StatusFacet styles={styles} theme={theme} status={issue.status} />
+          <PriorityFacet styles={styles} theme={theme} priority={issue.priority} />
+          <Facet styles={styles} theme={theme} value={issue.type} />
+          <Facet
+            styles={styles}
+            theme={theme}
+            value={issue.assignee === null ? null : `@${issue.assignee}`}
+          />
+        </View>
+        {relations.length === 0 ? null : (
+          <View style={styles.metaRow}>
+            {relations.map((relation) => (
+              <Text key={relation} style={styles.tagText}>
+                {relation}
+              </Text>
+            ))}
+          </View>
+        )}
+      </View>
+      <DetailSection styles={styles} theme={theme} label="Description" value={issue.description} />
+      <DetailSection styles={styles} theme={theme} label="Design" value={issue.design} />
+      <DetailSection
+        styles={styles}
+        theme={theme}
+        label="Acceptance criteria"
+        value={issue.acceptanceCriteria}
+      />
+      <DetailSection styles={styles} theme={theme} label="Notes" value={issue.notes} />
       {issue.comments.length === 0 ? null : (
-        <View style={styles.detailBlock}>
-          <Text style={styles.detailLabel}>Comments ({issue.comments.length})</Text>
+        <View style={styles.detailSection}>
+          <Text style={styles.detailSectionLabel}>Comments ({issue.comments.length})</Text>
           {issue.comments.slice(0, 5).map((comment) => (
-            <Text key={comment.id} style={styles.detailText}>
-              {comment.author ?? "unknown"}: {comment.text}
-            </Text>
+            <View key={comment.id} style={styles.commentBlock}>
+              <Text style={styles.commentByline}>
+                {comment.author ?? "unknown"}
+                {comment.createdAt === null ? "" : ` · ${comment.createdAt}`}
+              </Text>
+              <MarkdownView styles={styles} theme={theme} source={comment.text} />
+            </View>
           ))}
         </View>
       )}
-      <Text style={styles.monoMeta}>
-        {[
-          issue.createdAt === null ? null : `created ${issue.createdAt}`,
-          issue.updatedAt === null ? null : `updated ${issue.updatedAt}`,
-          issue.closedAt === null ? null : `closed ${issue.closedAt}`,
-        ]
-          .filter((part): part is string => part !== null)
-          .join("  ·  ")}
-      </Text>
+      {timestamps.length === 0 ? null : <Text style={styles.monoMeta}>{timestamps}</Text>}
     </View>
   );
+}
+
+function refLabel(ref: IssueDetail["dependencies"][number]): string {
+  return `${ref.id}${ref.status === null ? "" : ` (${ref.status})`}`;
+}
+
+/** Joins accessibility facts into one comma-separated label, dropping absent ones. */
+export function accessibilityFacts(parts: readonly (string | null)[]): string {
+  return parts.filter((part): part is string => part !== null && part.length > 0).join(", ");
 }
