@@ -109,19 +109,42 @@ unparseable JSON produce different codes, because each implies a different user 
 
 ## UI direction
 
-A quiet dependency and workstream console, not a SaaS dashboard.
+A quiet dependency and workstream console shaped as a **workbench**, not a SaaS dashboard.
 
-- A single **left status rail** carries all state colour. Every list row is a 3 px coloured rail
-  plus dense flat text on one surface.
+- **Layout responds to `layout.compact`** (the only layout signal in the panel contract; `width`
+  is not available).
+  - Non-compact: a fixed-height workbench. Header and a project pulse/provenance summary sit at
+    the top; below them a master/detail pair fills the remaining panel height with two
+    **independent scroll regions**. The left pane holds the view switcher, a persistent search
+    input, and the scrollable list; the right pane is the issue inspector. Selecting any issue —
+    including a search result — renders detail immediately in the inspector, never appended after
+    the dashboard.
+  - Compact: the dashboard is one scrolling screen; selecting an issue replaces it with a
+    dedicated, independently scrollable detail screen with a Back action. No bottom sheet, no
+    absolute positioning.
+- **An operational view switcher** is the one distinctive element: `Next up` (triage picks),
+  `Plan` (execution tracks), and `Risks` (blockers plus alerts) are mutually exclusive, carry
+  item counts, use `tablist`/`tab` accessibility roles, and mark the active view with
+  `accessibilityState.selected`. A view whose backing `bv` section is unavailable shows `—`.
+  Views are derived purely from the existing dashboard payload; no new RPC or analysis.
+- **Search is always reachable** from the master pane. Submitting a query temporarily replaces the
+  list with search results and shows an explicit back control returning to the active view.
+- A single **status rail** carries all state colour. Every list row is a 3 px coloured rail plus
+  dense flat text on one surface, with a row hit target generous enough for touch.
 - A **compact project pulse** row of bare numbers (open / ready / blocked / active / tracked).
   No cards, no shadows, no gradients, no coloured panels.
 - Authority, readiness, freshness, source kind, and short `data_hash` are shown as a single
   provenance line, because trustworthiness of the analysis is the first thing a reader needs.
+- Prose-heavy inspector content is constrained to a readable measure so a wide panel does not
+  stretch text edge to edge, while lists use the available horizontal space.
 - All state is representable: loading, error, empty project, missing project, per-section
-  degraded, and unavailable `bv`.
+  degraded, and unavailable `bv`. Whole-panel states (no `bv`, missing project, failed analysis)
+  replace the workbench with a labelled notice and still allow an already-selected issue to be
+  read.
 - Every pressable carries `accessibilityRole` and a descriptive `accessibilityLabel`; the pulse
   cells and status text are labelled too.
-- Colours come only from `theme.colors`, and padding and font sizes respond to `layout.compact`.
+- Colours come only from `theme.colors`, styling lives in the typed `PanelStyles` factory rather
+  than inline styles, and padding and font sizes respond to `layout.compact`.
 
 ## MVP scope
 

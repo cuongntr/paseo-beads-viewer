@@ -148,7 +148,7 @@ export function TrackBlock({
   onSelect,
 }: Common & { track: Track; selectedId: string | null; onSelect: (issueId: string) => void }) {
   return (
-    <View>
+    <View style={styles.trackBlock}>
       <Text style={styles.sectionMeta}>
         {track.id} · {track.items.length} item{track.items.length === 1 ? "" : "s"}
         {track.reason === null ? "" : ` · ${track.reason}`}
@@ -275,7 +275,7 @@ export function IssueDetailView({ styles, theme, issue }: Common & { issue: Issu
     .join("  ·  ");
 
   return (
-    <View style={{ gap: 4 }}>
+    <View style={styles.detailStack}>
       <RailRow styles={styles} theme={theme} tone={statusTone(issue.status)} title={issue.title} meta={facts} />
       {issue.labels.length === 0 ? null : (
         <Text style={styles.tagText}>labels: {issue.labels.join(", ")}</Text>

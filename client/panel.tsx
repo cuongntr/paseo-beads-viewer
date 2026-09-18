@@ -2,7 +2,13 @@ import { type PluginWorkspacePanelProps, useRpc, useWorkspace } from "@getpaseo/
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { SEARCH_LIMIT_DEFAULT, SEARCH_QUERY_MAX_LENGTH } from "../shared/beads";
+import {
+  SEARCH_LIMIT_DEFAULT,
+  SEARCH_QUERY_MAX_LENGTH,
+  type CommandError,
+  type IssueDetail,
+  type SearchResult,
+} from "../shared/beads";
 import { dashboardRpc, issueRpc, searchRpc, type DashboardResult } from "../shared/rpc";
 import {
   dashboardRefreshRevision,
@@ -33,6 +39,16 @@ type Selection = string | null;
 /** Submitted search text, or nothing submitted yet. */
 type SubmittedQuery = string | null;
 
+/** Mutually exclusive operational modes of the master pane. */
+type ViewMode = "next" | "plan" | "risks";
+
+interface ViewSpec {
+  readonly mode: ViewMode;
+  readonly label: string;
+  /** `null` when the `bv` section backing this view is unavailable. */
+  readonly count: number | null;
+}
+
 export function BeadsPanel(props: PluginWorkspacePanelProps) {
   return <BeadsWorkspacePanel key={props.workspaceId} {...props} />;
 }
@@ -49,6 +65,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   const [selectedId, setSelectedId] = useState<Selection>(null);
   const [queryText, setQueryText] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState<SubmittedQuery>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("next");
 
   // Slash commands and Command Center actions may target the panel before it mounts.
   const focusRevision = useSyncExternalStore(subscribeIssueFocus, issueFocusRevision, issueFocusRevision);
@@ -102,6 +119,13 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
     setSubmittedQuery(trimmed.length === 0 ? null : trimmed);
   }, [queryText]);
 
+  const exitSearch = useCallback(() => {
+    setSubmittedQuery(null);
+    setQueryText("");
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedId(null), []);
+
   const data = dashboard.data ?? null;
   const authority = data?.source?.authority ?? null;
   const railTone = data === null ? "neutral" : data.tool.available ? authorityTone(authority) : "danger";
@@ -118,175 +142,349 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
     return parts.join("  ·  ");
   }, [dashboard.isPending, data, workspaceName, workspaceId]);
 
-  return (
-    <View style={styles.screen}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.headerRow}>
-          <View style={[styles.rail, { backgroundColor: toneColor(theme, railTone) }]} />
-          <View style={styles.headerText}>
-            <Text style={styles.title}>Beads</Text>
-            <Text style={styles.subtitle}>{headerSubtitle}</Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Refresh Beads analysis"
-            accessibilityState={{ busy: dashboard.isFetching }}
-            onPress={refresh}
-            style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
-          >
-            <Text style={styles.actionText}>{dashboard.isFetching ? "Reading…" : "Refresh"}</Text>
-          </Pressable>
+  const views: readonly ViewSpec[] = useMemo(() => viewSpecs(data), [data]);
+  const activeViewLabel = views.find((view) => view.mode === viewMode)?.label ?? "Next up";
+  const searchActive = submittedQuery !== null;
+
+  const header = (
+    <View style={styles.topBar}>
+      <View style={styles.headerRow}>
+        <View style={[styles.rail, { backgroundColor: toneColor(theme, railTone) }]} />
+        <View style={styles.headerText}>
+          <Text style={styles.title}>Beads</Text>
+          <Text style={styles.subtitle}>{headerSubtitle}</Text>
         </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Refresh Beads analysis"
+          accessibilityState={{ busy: dashboard.isFetching }}
+          onPress={refresh}
+          style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
+        >
+          <Text style={styles.actionText}>{dashboard.isFetching ? "Reading…" : "Refresh"}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 
-        {dashboard.isError ? (
-          <Text style={styles.danger} accessibilityLabel="Beads analysis failed">
-            The Beads analysis request failed.{" "}
-            {dashboard.error instanceof Error ? dashboard.error.message : "Unknown error."}
-          </Text>
-        ) : null}
+  const requestFailure = dashboard.isError ? (
+    <View style={styles.banner}>
+      <Text style={styles.danger} accessibilityLabel="Beads analysis failed">
+        The Beads analysis request failed.{" "}
+        {dashboard.error instanceof Error ? dashboard.error.message : "Unknown error."}
+      </Text>
+    </View>
+  ) : null;
 
-        {data === null ? (
-          dashboard.isPending ? <Empty styles={styles} theme={theme} message="Loading…" /> : null
-        ) : (
-          <BeadsBody
-            data={data}
-            styles={styles}
-            theme={theme}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-          />
-        )}
-
-        {data !== null && data.tool.available && data.projectState === "ready" ? (
-          <>
-            <SectionHeader styles={styles} theme={theme} title="Search" meta={`max ${SEARCH_QUERY_MAX_LENGTH} chars`} />
-            <View style={styles.searchRow}>
-              <TextInput
-                accessibilityLabel="Search Beads issues"
-                placeholder="Search issues"
-                placeholderTextColor={theme.colors.foregroundMuted}
-                value={queryText}
-                onChangeText={setQueryText}
-                onSubmitEditing={submitSearch}
-                maxLength={SEARCH_QUERY_MAX_LENGTH}
-                returnKeyType="search"
-                style={styles.input}
-              />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Run Beads search"
-                onPress={submitSearch}
-                style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
-              >
-                <Text style={styles.actionText}>Search</Text>
-              </Pressable>
-            </View>
-            {submittedQuery === null ? null : search.isPending ? (
-              <Empty styles={styles} theme={theme} message="Searching…" />
-            ) : search.data === undefined ? (
-              <Text style={styles.danger}>The search request failed.</Text>
-            ) : search.data.error !== null ? (
-              <Text style={styles.danger}>{errorLabel(search.data.error)}</Text>
-            ) : search.data.results.length === 0 ? (
-              <Empty styles={styles} theme={theme} message={`No issue matched “${search.data.query}”.`} />
-            ) : (
-              search.data.results.map((result) => (
-                <SearchResultRow
-                  key={result.id}
-                  styles={styles}
-                  theme={theme}
-                  result={result}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                />
-              ))
-            )}
-          </>
-        ) : null}
-
-        {selectedId === null ? null : (
-          <>
-            <SectionHeader styles={styles} theme={theme} title="Issue detail" meta={selectedId} />
-            {issue.isPending ? (
-              <Empty styles={styles} theme={theme} message="Reading issue…" />
-            ) : issue.data === undefined ? (
-              <Text style={styles.danger}>The issue request failed.</Text>
-            ) : issue.data.issue === null ? (
-              <Text style={styles.danger}>{errorLabel(issue.data.error)}</Text>
-            ) : (
-              <IssueDetailView styles={styles} theme={theme} issue={issue.data.issue} />
-            )}
+  // Compact drill-in: the inspector fully replaces the dashboard screen.
+  if (layout.compact && selectedId !== null) {
+    return (
+      <View style={styles.screen}>
+        <View style={styles.topBar}>
+          <View style={styles.backRow}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Clear the selected issue"
-              onPress={() => setSelectedId(null)}
-              style={({ pressed }) => [styles.action, { alignSelf: "flex-start" }, pressed ? styles.actionPressed : null]}
+              accessibilityLabel="Back to the Beads dashboard"
+              onPress={clearSelection}
+              style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
             >
-              <Text style={styles.actionText}>Clear selection</Text>
+              <Text style={styles.actionText}>← Back</Text>
             </Pressable>
-          </>
-        )}
-      </ScrollView>
+            <View style={styles.headerText}>
+              <Text style={styles.title}>Issue detail</Text>
+              <Text style={styles.subtitle}>{selectedId}</Text>
+            </View>
+          </View>
+        </View>
+        <ScrollView style={styles.paneScroll} contentContainerStyle={styles.detailContent}>
+          <IssueInspectorBody styles={styles} theme={theme} issue={issue} />
+        </ScrollView>
+      </View>
+    );
+  }
+
+  const notice = data === null ? null : noticeFor(data);
+  if (data === null || notice !== null) {
+    return (
+      <View style={styles.screen}>
+        {header}
+        {requestFailure}
+        <ScrollView style={styles.paneScroll} contentContainerStyle={styles.noticeContent}>
+          {notice === null ? (
+            dashboard.isPending ? <Empty styles={styles} theme={theme} message="Loading…" /> : null
+          ) : (
+            <View style={styles.stateBlock}>
+              <Text
+                style={notice.tone === "danger" ? styles.danger : styles.body}
+                accessibilityLabel={notice.accessibilityLabel}
+              >
+                {notice.headline}
+              </Text>
+              <Text style={styles.muted}>{notice.detail}</Text>
+            </View>
+          )}
+          {selectedId === null ? null : (
+            <View style={styles.stateBlock}>
+              <SectionHeader styles={styles} theme={theme} title="Issue detail" meta={selectedId} />
+              <IssueInspectorBody styles={styles} theme={theme} issue={issue} />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Clear the selected issue"
+                onPress={clearSelection}
+                style={({ pressed }) => [styles.action, styles.actionInline, pressed ? styles.actionPressed : null]}
+              >
+                <Text style={styles.actionText}>Clear selection</Text>
+              </Pressable>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  const summary = <ProjectSummary styles={styles} theme={theme} data={data} />;
+
+  const masterControls = (
+    <>
+      <View style={styles.searchRow}>
+        <TextInput
+          accessibilityLabel="Search Beads issues"
+          placeholder="Search issues"
+          placeholderTextColor={theme.colors.foregroundMuted}
+          value={queryText}
+          onChangeText={setQueryText}
+          onSubmitEditing={submitSearch}
+          maxLength={SEARCH_QUERY_MAX_LENGTH}
+          returnKeyType="search"
+          style={styles.input}
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Run Beads search"
+          onPress={submitSearch}
+          style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
+        >
+          <Text style={styles.actionText}>Search</Text>
+        </Pressable>
+      </View>
+      {searchActive ? (
+        <View style={styles.backRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Leave search results and return to ${activeViewLabel}`}
+            onPress={exitSearch}
+            style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
+          >
+            <Text style={styles.actionText}>← {activeViewLabel}</Text>
+          </Pressable>
+          <Text style={styles.muted}>Search results for “{submittedQuery}”</Text>
+        </View>
+      ) : (
+        <ViewSwitcher styles={styles} views={views} viewMode={viewMode} onSelect={setViewMode} />
+      )}
+    </>
+  );
+
+  const masterList = searchActive ? (
+    <SearchList
+      styles={styles}
+      theme={theme}
+      search={search}
+      submittedQuery={submittedQuery}
+      selectedId={selectedId}
+      onSelect={setSelectedId}
+    />
+  ) : (
+    <OperationalView
+      styles={styles}
+      theme={theme}
+      data={data}
+      viewMode={viewMode}
+      selectedId={selectedId}
+      onSelect={setSelectedId}
+    />
+  );
+
+  if (layout.compact) {
+    return (
+      <View style={styles.screen}>
+        {header}
+        {requestFailure}
+        <ScrollView style={styles.paneScroll} contentContainerStyle={styles.paneContent}>
+          {summary}
+          <View style={styles.divider} />
+          <View style={styles.controlStack}>{masterControls}</View>
+          {masterList}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.screen}>
+      {header}
+      {requestFailure}
+      <View style={styles.summaryBar}>{summary}</View>
+      <View style={styles.workbench}>
+        <View style={styles.masterPane}>
+          <View style={styles.masterHeader}>{masterControls}</View>
+          <ScrollView style={styles.paneScroll} contentContainerStyle={styles.paneContent}>
+            {masterList}
+          </ScrollView>
+        </View>
+        <View style={styles.detailPane}>
+          <ScrollView style={styles.paneScroll} contentContainerStyle={styles.detailContent}>
+            {selectedId === null ? (
+              <View style={styles.stateBlock}>
+                <SectionHeader styles={styles} theme={theme} title="Issue inspector" />
+                <Empty
+                  styles={styles}
+                  theme={theme}
+                  message="Select an issue on the left to read its detail here."
+                />
+              </View>
+            ) : (
+              <>
+                <View style={styles.backRow}>
+                  <View style={styles.headerText}>
+                    <SectionHeader styles={styles} theme={theme} title="Issue detail" meta={selectedId} />
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear the selected issue"
+                    onPress={clearSelection}
+                    style={({ pressed }) => [
+                      styles.action,
+                      styles.actionInline,
+                      pressed ? styles.actionPressed : null,
+                    ]}
+                  >
+                    <Text style={styles.actionText}>Clear</Text>
+                  </Pressable>
+                </View>
+                <IssueInspectorBody styles={styles} theme={theme} issue={issue} />
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
     </View>
   );
 }
 
-function BeadsBody({
-  data,
+/** A whole-panel state that replaces the workbench: no analysis to lay out. */
+interface Notice {
+  readonly tone: "danger" | "neutral";
+  readonly headline: string;
+  readonly detail: string;
+  readonly accessibilityLabel: string;
+}
+
+function noticeFor(data: DashboardResult): Notice | null {
+  if (!data.tool.available) {
+    return {
+      tone: "danger",
+      headline: errorLabel(data.tool.error),
+      detail:
+        (data.tool.error?.code === "unavailable"
+          ? "Install the bv CLI on the daemon machine and refresh."
+          : "Resolve the workspace path or connection error above, then refresh.") +
+        " This panel only runs read-only commands.",
+      accessibilityLabel: "bv is unavailable",
+    };
+  }
+  if (data.projectState === "missing") {
+    return {
+      tone: "neutral",
+      headline: "No Beads project in this workspace.",
+      detail:
+        "bv found no .beads source here. Initialise Beads with br or bd in this directory, then refresh.",
+      accessibilityLabel: "No Beads project in this workspace",
+    };
+  }
+  if (data.projectState === "error") {
+    return {
+      tone: "danger",
+      headline: errorLabel(data.sections.triage.error),
+      detail: "The Beads source could not be analysed. Nothing was written; retry after fixing the source.",
+      accessibilityLabel: "The Beads analysis could not be read",
+    };
+  }
+  return null;
+}
+
+function viewSpecs(data: DashboardResult | null): readonly ViewSpec[] {
+  if (data === null) {
+    return [
+      { mode: "next", label: "Next up", count: null },
+      { mode: "plan", label: "Plan", count: null },
+      { mode: "risks", label: "Risks", count: null },
+    ];
+  }
+  const triageOk = data.sections.triage.status === "ok";
+  const alertsOk = data.sections.alerts.status === "ok";
+  const riskCount =
+    !triageOk && !alertsOk ? null : (triageOk ? data.blockers.length : 0) + (alertsOk ? data.alerts.length : 0);
+  return [
+    { mode: "next", label: "Next up", count: triageOk ? data.recommendations.length : null },
+    { mode: "plan", label: "Plan", count: data.sections.plan.status === "ok" ? data.tracks.length : null },
+    { mode: "risks", label: "Risks", count: riskCount },
+  ];
+}
+
+function ViewSwitcher({
   styles,
-  theme,
-  selectedId,
+  views,
+  viewMode,
   onSelect,
 }: {
-  data: DashboardResult;
+  styles: PanelStyles;
+  views: readonly ViewSpec[];
+  viewMode: ViewMode;
+  onSelect: (mode: ViewMode) => void;
+}) {
+  return (
+    <View style={styles.switcherRow} accessibilityRole="tablist" accessibilityLabel="Beads operational views">
+      {views.map((view) => {
+        const selected = view.mode === viewMode;
+        return (
+          <Pressable
+            key={view.mode}
+            accessibilityRole="tab"
+            accessibilityLabel={
+              view.count === null
+                ? `${view.label} view, unavailable`
+                : `${view.label} view, ${view.count} item${view.count === 1 ? "" : "s"}`
+            }
+            accessibilityState={{ selected }}
+            onPress={() => onSelect(view.mode)}
+            style={({ pressed }) => [
+              styles.switcherItem,
+              selected ? styles.switcherItemSelected : null,
+              pressed && !selected ? styles.railRowSelected : null,
+            ]}
+          >
+            <Text style={[styles.switcherLabel, selected ? styles.switcherLabelSelected : null]}>
+              {view.label}
+            </Text>
+            <Text style={styles.switcherCount}>{view.count === null ? "—" : view.count}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function ProjectSummary({
+  styles,
+  theme,
+  data,
+}: {
   styles: PanelStyles;
   theme: PluginWorkspacePanelProps["theme"];
-  selectedId: Selection;
-  onSelect: (issueId: string) => void;
+  data: DashboardResult;
 }) {
   const authority = data.source?.authority ?? null;
-
-  if (!data.tool.available) {
-    return (
-      <View style={{ gap: 6 }}>
-        <Text style={styles.danger} accessibilityLabel="bv is unavailable">
-          {errorLabel(data.tool.error)}
-        </Text>
-        <Text style={styles.muted}>
-          {data.tool.error?.code === "unavailable"
-            ? "Install the bv CLI on the daemon machine and refresh."
-            : "Resolve the workspace path or connection error above, then refresh."} This panel only runs read-only commands.
-        </Text>
-      </View>
-    );
-  }
-
-  if (data.projectState === "missing") {
-    return (
-      <View style={{ gap: 6 }}>
-        <Text style={styles.body} accessibilityLabel="No Beads project in this workspace">
-          No Beads project in this workspace.
-        </Text>
-        <Text style={styles.muted}>
-          bv found no .beads source here. Initialise Beads with br or bd in this directory, then refresh.
-        </Text>
-      </View>
-    );
-  }
-
-  if (data.projectState === "error") {
-    return (
-      <View style={{ gap: 6 }}>
-        <Text style={styles.danger} accessibilityLabel="The Beads analysis could not be read">
-          {errorLabel(data.sections.triage.error)}
-        </Text>
-        <Text style={styles.muted}>
-          The Beads source could not be analysed. Nothing was written; retry after fixing the source.
-        </Text>
-      </View>
-    );
-  }
-
   const counts = data.counts;
   const provenance = [
     authorityLabel(authority),
@@ -298,7 +496,7 @@ function BeadsBody({
     .join("  ·  ");
 
   return (
-    <View style={{ gap: 6 }}>
+    <View style={styles.stateBlock}>
       <RailRow
         styles={styles}
         theme={theme}
@@ -313,7 +511,6 @@ function BeadsBody({
               : authority.warnings[0]
         }
       />
-
       {counts === null ? (
         <Empty styles={styles} theme={theme} message="bv returned no counts for this project." />
       ) : (
@@ -325,61 +522,91 @@ function BeadsBody({
           <Pulse styles={styles} label="tracked" value={counts.total} />
         </View>
       )}
+    </View>
+  );
+}
 
-      <View style={styles.divider} />
+function OperationalView({
+  styles,
+  theme,
+  data,
+  viewMode,
+  selectedId,
+  onSelect,
+}: {
+  styles: PanelStyles;
+  theme: PluginWorkspacePanelProps["theme"];
+  data: DashboardResult;
+  viewMode: ViewMode;
+  selectedId: Selection;
+  onSelect: (issueId: string) => void;
+}) {
+  if (viewMode === "next") {
+    return (
+      <View style={styles.listGroup}>
+        <SectionHeader
+          styles={styles}
+          theme={theme}
+          title="Triage picks"
+          meta={data.sections.triage.status === "ok" ? `${data.recommendations.length} shown` : "unavailable"}
+        />
+        {data.sections.triage.status !== "ok" ? (
+          <Text style={styles.danger}>{errorLabel(data.sections.triage.error)}</Text>
+        ) : data.recommendations.length === 0 ? (
+          <Empty styles={styles} theme={theme} message="bv returned no triage recommendation for this scope." />
+        ) : (
+          data.recommendations.map((recommendation) => (
+            <RecommendationRow
+              key={recommendation.id}
+              styles={styles}
+              theme={theme}
+              recommendation={recommendation}
+              selected={selectedId === recommendation.id}
+              onSelect={onSelect}
+            />
+          ))
+        )}
+      </View>
+    );
+  }
 
-      <SectionHeader
-        styles={styles}
-        theme={theme}
-        title="Triage picks"
-        meta={data.sections.triage.status === "ok" ? `${data.recommendations.length} shown` : "unavailable"}
-      />
-      {data.sections.triage.status !== "ok" ? (
-        <Text style={styles.danger}>{errorLabel(data.sections.triage.error)}</Text>
-      ) : data.recommendations.length === 0 ? (
-        <Empty styles={styles} theme={theme} message="bv returned no triage recommendation for this scope." />
-      ) : (
-        data.recommendations.map((recommendation) => (
-          <RecommendationRow
-            key={recommendation.id}
-            styles={styles}
-            theme={theme}
-            recommendation={recommendation}
-            selected={selectedId === recommendation.id}
-            onSelect={onSelect}
-          />
-        ))
-      )}
+  if (viewMode === "plan") {
+    return (
+      <View style={styles.listGroup}>
+        <SectionHeader
+          styles={styles}
+          theme={theme}
+          title="Execution tracks"
+          meta={
+            data.sections.plan.status !== "ok"
+              ? "unavailable"
+              : data.planSummary === null
+                ? `${data.tracks.length} tracks`
+                : `${data.tracks.length} tracks · ${data.planSummary.totalActionable ?? 0} actionable · ${data.planSummary.totalBlocked ?? 0} blocked`
+          }
+        />
+        {data.sections.plan.status !== "ok" ? (
+          <Text style={styles.danger}>{errorLabel(data.sections.plan.error)}</Text>
+        ) : data.tracks.length === 0 ? (
+          <Empty styles={styles} theme={theme} message="bv found no parallel execution track." />
+        ) : (
+          data.tracks.map((track) => (
+            <TrackBlock
+              key={track.id}
+              styles={styles}
+              theme={theme}
+              track={track}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          ))
+        )}
+      </View>
+    );
+  }
 
-      <SectionHeader
-        styles={styles}
-        theme={theme}
-        title="Execution tracks"
-        meta={
-          data.sections.plan.status !== "ok"
-            ? "unavailable"
-            : data.planSummary === null
-              ? `${data.tracks.length} tracks`
-              : `${data.tracks.length} tracks · ${data.planSummary.totalActionable ?? 0} actionable · ${data.planSummary.totalBlocked ?? 0} blocked`
-        }
-      />
-      {data.sections.plan.status !== "ok" ? (
-        <Text style={styles.danger}>{errorLabel(data.sections.plan.error)}</Text>
-      ) : data.tracks.length === 0 ? (
-        <Empty styles={styles} theme={theme} message="bv found no parallel execution track." />
-      ) : (
-        data.tracks.map((track) => (
-          <TrackBlock
-            key={track.id}
-            styles={styles}
-            theme={theme}
-            track={track}
-            selectedId={selectedId}
-            onSelect={onSelect}
-          />
-        ))
-      )}
-
+  return (
+    <View style={styles.listGroup}>
       <SectionHeader styles={styles} theme={theme} title="Blockers" meta={`${data.blockers.length}`} />
       {data.sections.triage.status !== "ok" ? (
         <Text style={styles.danger}>{errorLabel(data.sections.triage.error)}</Text>
@@ -428,6 +655,85 @@ function BeadsBody({
       )}
     </View>
   );
+}
+
+/** The slice of a React Query result the presentational bodies actually read. */
+interface QueryState<TData> {
+  readonly isPending: boolean;
+  readonly data: TData | undefined;
+}
+
+type SearchQueryState = QueryState<{
+  readonly query: string;
+  readonly results: readonly SearchResult[];
+  readonly error: CommandError | null;
+}>;
+
+type IssueQueryState = QueryState<{
+  readonly issue: IssueDetail | null;
+  readonly error: CommandError | null;
+}>;
+
+function SearchList({
+  styles,
+  theme,
+  search,
+  submittedQuery,
+  selectedId,
+  onSelect,
+}: {
+  styles: PanelStyles;
+  theme: PluginWorkspacePanelProps["theme"];
+  search: SearchQueryState;
+  submittedQuery: SubmittedQuery;
+  selectedId: Selection;
+  onSelect: (issueId: string) => void;
+}) {
+  return (
+    <View style={styles.listGroup}>
+      <SectionHeader
+        styles={styles}
+        theme={theme}
+        title="Search results"
+        meta={`max ${SEARCH_QUERY_MAX_LENGTH} chars`}
+      />
+      {submittedQuery === null ? null : search.isPending ? (
+        <Empty styles={styles} theme={theme} message="Searching…" />
+      ) : search.data === undefined ? (
+        <Text style={styles.danger}>The search request failed.</Text>
+      ) : search.data.error !== null ? (
+        <Text style={styles.danger}>{errorLabel(search.data.error)}</Text>
+      ) : search.data.results.length === 0 ? (
+        <Empty styles={styles} theme={theme} message={`No issue matched “${search.data.query}”.`} />
+      ) : (
+        search.data.results.map((result) => (
+          <SearchResultRow
+            key={result.id}
+            styles={styles}
+            theme={theme}
+            result={result}
+            selectedId={selectedId}
+            onSelect={onSelect}
+          />
+        ))
+      )}
+    </View>
+  );
+}
+
+function IssueInspectorBody({
+  styles,
+  theme,
+  issue,
+}: {
+  styles: PanelStyles;
+  theme: PluginWorkspacePanelProps["theme"];
+  issue: IssueQueryState;
+}) {
+  if (issue.isPending) return <Empty styles={styles} theme={theme} message="Reading issue…" />;
+  if (issue.data === undefined) return <Text style={styles.danger}>The issue request failed.</Text>;
+  if (issue.data.issue === null) return <Text style={styles.danger}>{errorLabel(issue.data.error)}</Text>;
+  return <IssueDetailView styles={styles} theme={theme} issue={issue.data.issue} />;
 }
 
 function Pulse({
