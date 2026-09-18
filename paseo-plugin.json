@@ -1,6 +1,5 @@
 {
   "id": "paseo-beads",
-  "description": "Read-only Beads dependency and readiness console for Paseo workspaces, backed by the bv analysis CLI.",
   "requirements": {
     "paseo": ">=0.8.0"
   }
