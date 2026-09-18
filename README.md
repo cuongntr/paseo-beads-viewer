@@ -1,8 +1,9 @@
 # paseo-beads
 
 A read-only Beads console for Paseo workspaces. It surfaces project pulse, triage picks,
-execution tracks, blockers, and alerts for the workspace you are in, plus issue search,
-issue detail, and a composer attachment source for Beads issues.
+execution tracks, blockers, and alerts for the workspace you are in, plus a read-only
+working-set board, issue search, Markdown-rendered issue detail, and a composer attachment
+source for Beads issues.
 
 The plugin never invokes a mutating `br` or `bd` command. There is no claim, close,
 update, or create path in the code. `bv` may refresh its own compatibility export while
@@ -101,3 +102,10 @@ After editing source, run `paseo plugin reload paseo-beads`.
   reshapes them.
 - Statuses, readiness values, and alert severities are treated as opaque strings, so a newer
   `bv` renders without a plugin update but without bespoke styling for new values.
+- The **Board** view is a surfaced working set, not a project Kanban. It can only show issues
+  that `bv`'s capped triage (≤12 picks) and plan (≤8 tracks × ≤10 items) sections returned, and
+  it labels itself accordingly. Blockers are excluded because they carry no status. There is no
+  drag, drop, or status change.
+- Issue prose renders through a bounded in-repo Markdown subset (headings h1–h3, lists, task
+  items, quotes, rules, code, bold, italic, links). HTML, images, and tables are not rendered,
+  and link targets are shown as text — the panel never opens a URL.

@@ -24,11 +24,15 @@ Three runtimes, enforced by the Paseo plugin import rules.
 ```
 client/ (Paseo app, React Native)      shared/ (both)              server/ (daemon subprocess)
 ─────────────────────────────────      ──────────────────          ───────────────────────────
-panel.tsx   TanStack Query UI          beads.ts  Zod types         dashboard.ts  triage+plan+alerts
-rows.tsx    status-rail rows           rpc.ts    RPC contracts     search.ts     robot-search
-styles.ts   theme tokens                         attachment source issue.ts      tracker show
-format.ts   labels and tones                                       attachments.ts workspace fanout
-focus.ts    slash-command → panel                                  tracker.ts    br vs bd identity
+panel.tsx        TanStack Query UI     beads.ts  Zod types         dashboard.ts  triage+plan+alerts
+rows.tsx         priority-rail rows    rpc.ts    RPC contracts     search.ts     robot-search
+board.ts         working-set grouping            attachment source issue.ts      tracker show
+board-view.tsx   read-only board                                  attachments.ts workspace fanout
+markdown.ts      bounded md parser                                tracker.ts    br vs bd identity
+markdown-view.tsx md renderer
+styles.ts        theme tokens
+format.ts        labels, tones, icons
+focus.ts         slash-command → panel
                                                                    workspace.ts  cwd resolution
                                                                    normalize.ts  payload reshaping
                                                                    command.ts    secure runner
@@ -123,14 +127,47 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
     dedicated, independently scrollable detail screen with a Back action. No bottom sheet, no
     absolute positioning.
 - **An operational view switcher** is the one distinctive element: `Next up` (triage picks),
-  `Plan` (execution tracks), and `Risks` (blockers plus alerts) are mutually exclusive, carry
-  item counts, use `tablist`/`tab` accessibility roles, and mark the active view with
-  `accessibilityState.selected`. A view whose backing `bv` section is unavailable shows `—`.
-  Views are derived purely from the existing dashboard payload; no new RPC or analysis.
+  `Plan` (execution tracks), `Risks` (blockers plus alerts), and `Board` (the working set) are
+  mutually exclusive, carry item counts, use `tablist`/`tab` accessibility roles, and mark the
+  active view with `accessibilityState.selected`. A view whose backing `bv` section is unavailable
+  shows `—`. Views are derived purely from the existing dashboard payload; no new RPC or analysis.
+- **Pane proportions follow the view.** Operational views give the master pane slightly more room
+  than the inspector (5:4) because the working list is what a reader scans. `Board` is
+  board-dominant (7:3) and keeps the inspector reachable so a card click still reads detail in
+  place.
 - **Search is always reachable** from the master pane. Submitting a query temporarily replaces the
   list with search results and shows an explicit back control returning to the active view.
-- A single **status rail** carries all state colour. Every list row is a 3 px coloured rail plus
-  dense flat text on one surface, with a row hit target generous enough for touch.
+- **The `Board` view is an honest working set, not a project Kanban.** Cards are the deduplicated
+  union of triage recommendations and every plan track item — the only two `bv` sections that carry
+  an authoritative per-issue status. Blockers are excluded on purpose: the blocker payload has no
+  status, so including it would require inventing a lane. Because `bv` caps recommendations at 12
+  and the plan at 8 tracks of 10 items, the board can never be complete, and it says so in place:
+  `<surfaced> of <counts.total> surfaced · bv working set · read-only`, plus an explicit line when
+  a source section is unavailable. Lanes are discovered from the raw statuses (preserved verbatim)
+  and ordered in-progress, blocked, ready/open, unknown alphabetically, closed/done last; cards
+  order by priority then title then id. Non-compact renders fixed-width horizontally scrollable
+  lanes; compact stacks full-width lane sections instead of unreadable narrow columns. Clicking a
+  card selects the issue in the existing inspector. There is no drag, drop, or mutation control.
+- **Priority owns the colour channel.** Every issue row and board card is a 3 px rail coloured by
+  priority (P0 danger, P1 warning, P2 accent, lower or absent neutral, all from `theme.colors`).
+  Status is never colour-coded: it is a Lucide `Icon` plus its text, so an unknown status from a
+  newer `bv` still renders honestly instead of borrowing a meaning. Rows that have no priority keep
+  their own semantics on the rail — blockers use actionability, alerts use severity, search results
+  use accent for relevance.
+- **Metadata reads as structured wrapping facets**, not a dot-joined string and not a wall of
+  identical pills. Only the issue identifier gets a bordered container so it anchors the row;
+  status, priority, assignee, type, and dependency counts are plain labelled runs that wrap.
+  Accessibility labels keep every fact that the visual hierarchy compresses.
+- **Issue prose renders as bounded Markdown.** Description, design, acceptance criteria, notes, and
+  comment bodies go through `client/markdown.ts` (a pure, dependency-free parser) and
+  `client/markdown-view.tsx`. Supported: ATX h1–h3, paragraphs, ordered/unordered lists with
+  bounded nesting, task checkboxes, blockquotes, thematic rules, fenced code, inline code, bold,
+  italic, and inline links. Links render as accent label plus the visible URL and are deliberately
+  **not** pressable: the panel never calls `Linking`. Input characters, lines, blocks, code lines,
+  inline segments, and nesting depth are all bounded, and malformed or unclosed syntax degrades to
+  readable plain text rather than throwing. No HTML, images, or tables.
+- The inspector leads with a large bold issue title, then its facts, then content sections
+  separated by a hairline rule at a readable measure.
 - A **compact project pulse** row of bare numbers (open / ready / blocked / active / tracked).
   No cards, no shadows, no gradients, no coloured panels.
 - Authority, readiness, freshness, source kind, and short `data_hash` are shown as a single
@@ -152,14 +189,23 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
 
 - Workspace panel at `workspace` and `explorer` locations, with refresh.
 - Overview counts, authority/freshness state, triage picks, execution tracks, blockers, alerts.
-- Bounded issue search and selectable issue detail.
+- A read-only working-set `Board` view derived client-side from triage picks and plan tracks,
+  labelled as a surfaced subset rather than a complete project board.
+- Bounded issue search and selectable issue detail, with issue prose and comments rendered through
+  the bounded Markdown subset.
 - Composer attachment source for Beads issues across recent workspaces.
 - Command Center items and `/beads`, `/bead` slash commands.
 - Loading, error, empty, missing-project, and degraded states with accessibility labels.
 
 **Out of scope**
 
-- Any mutation: claim, close, update, create, dependency edits.
+- Any mutation: claim, close, update, create, dependency edits — including drag-and-drop status
+  changes on the `Board` view.
+- A complete project Kanban. The board can only show what `bv`'s capped triage and plan sections
+  surface; there is no "all issues" query to build one from.
+- Full CommonMark: HTML, images, tables, reference links, footnotes, and setext headings are out,
+  and no Markdown package is added as a runtime dependency.
+- Opening links. Rendered link targets are shown as text; `Linking` is never invoked.
 - Direct issue JSONL or database reading (only `.beads/metadata.json` is read for tracker detection and exact route binding).
 - Plugin-side graph, readiness, or cycle computation.
 - Cross-workspace aggregate dashboards; the panel is per-workspace.
@@ -179,7 +225,9 @@ All tests run without a Beads repository. `bv` and the tracker CLIs are never re
 | Command error mapping | Real `node -e` child processes prove literal-argv handling, cwd honouring, timeout kill, output-cap kill, and non-zero exit capture; `interpretJsonOutcome` asserted for every error code. |
 | Dashboard assembly (`tests/dashboard.test.ts`) | `bv` mocked at the command boundary with a fake Paseo API. Asserts healthy assembly, per-section degradation, provenance from a partial read, missing project, unavailable `bv` short-circuit, unresolved workspace short-circuit, and cache hit/no-cache-on-degraded behaviour. |
 | Handlers (`tests/handlers.test.ts`) | Search sanitisation and error passthrough; tracker detection and refusal to guess; attachment `.beads` filtering, URL/resourceType/snapshot content, per-workspace failure isolation, result bounding and deduplication, and blank-query and list-failure short-circuits. |
-| Client presentation (`tests/format.test.ts`) | Authority tone and label across complete/partial/failed/not-claim-safe sources; status and severity tone mapping including unknown values; relative age; distinct message per error code. |
+| Client presentation (`tests/format.test.ts`) | Authority tone and label across complete/partial/failed/not-claim-safe sources; priority tone mapping; Lucide status icon and status label mapping including unknown values; status and severity tone mapping; relative age; distinct message per error code. |
+| Markdown subset (`tests/markdown.test.ts`) | Block and inline parsing for every supported construct; malformed and unclosed emphasis, code, links, and fences degrading to plain text; adversarial marker soup proven not to throw; character, line, block, code-line, inline-segment, and nesting bounds asserted against the exported constants. |
+| Board derivation (`tests/board.test.ts`) | Union of recommendations and track items; dedupe with recommendation metadata winning while track membership is retained; opaque and blank statuses; lane ordering including unknown-status alphabetical placement; card ordering by priority then title then id; permutation determinism; empty and single-source degraded inputs. |
 
 Verification gate before install: `npm run typecheck`, `npm test`, and the `client/` mobile
 audit with no hits.
