@@ -152,10 +152,11 @@ export type BoardSnapshot = z.output<typeof BoardSnapshotSchema>;
 
 /**
  * Upper bound on issues carried to the client in one dashboard payload.
- * Measured against a real 776-issue project: 187 KB normalized, ~241 B per
- * issue. This cap therefore costs ~480 KB in the worst case, which a phone
- * fetches over the relay, so it is deliberately below what the 4 MB subprocess
- * output cap would allow.
+ * Measured against a real 776-issue project carrying the tracker's type and
+ * assignee overlay: 215 KB normalized, 283 B per issue. This cap therefore
+ * costs ~553 KB in the worst case, which a phone fetches over the relay, so it
+ * is deliberately below what the 4 MB subprocess output cap would allow.
+ * Re-measure this when a field is added to {@link BoardIssueSchema}.
  */
 export const BOARD_ISSUE_LIMIT = 2000;
 

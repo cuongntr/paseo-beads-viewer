@@ -315,41 +315,117 @@ export const EMPTY_FACETS: TrackerFacets = { ok: false, byId: new Map() };
 
 /** Bounds on the facet CSV, so a runaway tracker cannot allocate without limit. */
 const FACET_MAX_ROWS = 20_000;
-const FACET_MAX_LINE_LENGTH = 512;
+const FACET_MAX_FIELD_LENGTH = 512;
 
 /**
- * Parses `id,issue_type,assignee` CSV from `br`/`bd list`.
+ * Reads RFC 4180 CSV records.
  *
- * The plugin chooses those three columns precisely because none of them holds
- * free text: ids are pattern-bounded, types and assignees are short tokens. A
- * row that nonetheless contains a quote or the wrong column count is skipped
- * rather than guessed at, because a mis-split row would mislabel an issue.
+ * The trackers do quote: `br` wrapped 167 of 784 rows when asked for a column
+ * holding free text, because titles and assignees are unconstrained strings. A
+ * line-splitting parser would mis-split or silently drop exactly those rows, so
+ * this walks characters instead and handles quoted commas, doubled quotes, and
+ * newlines inside a quoted field.
+ *
+ * Bounds are enforced while scanning: an over-long field or an unterminated
+ * quote ends the read rather than growing without limit.
+ */
+export function readCsvRecords(
+  csv: string,
+  maxRecords = FACET_MAX_ROWS,
+  maxFieldLength = FACET_MAX_FIELD_LENGTH,
+): { readonly records: readonly (readonly string[])[]; readonly truncated: boolean } {
+  const records: string[][] = [];
+  let record: string[] = [];
+  let field = "";
+  let quoted = false;
+  let started = false;
+
+  const endField = (): boolean => {
+    if (field.length > maxFieldLength) return false;
+    record.push(field);
+    field = "";
+    started = false;
+    return true;
+  };
+  const endRecord = (): boolean => {
+    if (!endField()) return false;
+    // A trailing newline produces one empty field, which is not a record.
+    if (record.length > 1 || record[0] !== "") records.push(record);
+    record = [];
+    return true;
+  };
+
+  for (let index = 0; index < csv.length; index += 1) {
+    const char = csv[index];
+    if (quoted) {
+      if (char === '"') {
+        if (csv[index + 1] === '"') {
+          field += '"';
+          index += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        field += char;
+      }
+      if (field.length > maxFieldLength) return { records, truncated: true };
+      continue;
+    }
+    if (char === '"' && !started) {
+      quoted = true;
+      started = true;
+      continue;
+    }
+    if (char === ",") {
+      if (!endField()) return { records, truncated: true };
+      continue;
+    }
+    if (char === "\n" || char === "\r") {
+      if (char === "\r" && csv[index + 1] === "\n") index += 1;
+      if (!endRecord()) return { records, truncated: true };
+      if (records.length >= maxRecords) return { records, truncated: index < csv.length - 1 };
+      continue;
+    }
+    field += char;
+    started = true;
+    if (field.length > maxFieldLength) return { records, truncated: true };
+  }
+
+  if (quoted) return { records, truncated: true };
+  if (field.length > 0 || record.length > 0) {
+    if (!endRecord()) return { records, truncated: true };
+  }
+  return { records, truncated: false };
+}
+
+const FACET_HEADER: readonly string[] = ["id", "issue_type", "assignee"];
+
+/**
+ * Parses `id,issue_type,assignee` from `br`/`bd list`.
+ *
+ * A partial overlay is worse than none: an issue whose row was dropped is
+ * indistinguishable from a genuinely untyped one, and it would sit in the
+ * board's catch-all group with nothing to explain why. So a truncated or
+ * malformed read reports `ok: false`, which disables the axes that need types
+ * rather than quietly misgrouping issues.
  */
 export function parseTrackerFacets(csv: string): TrackerFacets {
+  const { records, truncated } = readCsvRecords(csv);
+  if (truncated) return EMPTY_FACETS;
+
   const byId = new Map<string, TrackerFacet>();
-  const lines = csv.split(/\r?\n/);
-  let header = false;
-  let rows = 0;
-  for (const line of lines) {
-    if (line.length === 0 || line.length > FACET_MAX_LINE_LENGTH) continue;
-    if (!header) {
-      // Tolerate a tracker that omits the header rather than losing the first row.
-      header = true;
-      if (line.startsWith("id,")) continue;
-    }
-    if (rows >= FACET_MAX_ROWS) break;
-    if (line.includes('"')) continue;
-    const parts = line.split(",");
-    if (parts.length !== 3) continue;
-    const id = parts[0]?.trim() ?? "";
+  for (const [index, record] of records.entries()) {
+    if (record.length !== FACET_HEADER.length) continue;
+    const id = record[0]?.trim() ?? "";
     if (id.length === 0) continue;
-    const type = parts[1]?.trim() ?? "";
-    const assignee = parts[2]?.trim() ?? "";
+    // Tolerate a tracker that omits the header rather than losing the first row.
+    if (index === 0 && FACET_HEADER.every((name, column) => record[column]?.trim() === name)) continue;
+    const type = record[1]?.trim() ?? "";
+    const assignee = record[2]?.trim() ?? "";
     byId.set(id, {
       type: type.length === 0 ? null : type.toLowerCase(),
       assignee: assignee.length === 0 ? null : assignee,
     });
-    rows += 1;
   }
   return { ok: byId.size > 0, byId };
 }

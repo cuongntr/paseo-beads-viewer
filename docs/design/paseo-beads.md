@@ -142,8 +142,18 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   subset. Type and assignee come from one extra read, `<tracker> list --fields
   id,issue_type,assignee --format csv`, because the graph carries neither; the tracker's JSON form
   was rejected as the source since it embeds every description and measured 2.5 MB against the
-  24 KB of that CSV. Triage picks and plan tracks stay pure enrichment — track membership and the
+  24 KB of that CSV. The CSV is read with a real RFC 4180 reader, not by splitting lines: `br`
+  quoted 167 of 784 rows when asked for a free-text column, and assignee is documented as
+  unconstrained text, so a line-splitting parser would silently drop exactly the assigned issues.
+  A truncated or malformed read reports no overlay at all rather than a partial one, because a
+  dropped row is indistinguishable from a genuinely untyped issue. Triage picks and plan tracks stay pure enrichment — track membership and the
   triage-pick flag — and never decide which issues exist.
+- **Client-side grouping is not graph analysis.** `bv` stays the sole analysis authority: the
+  plugin computes no ranking, readiness, cycle, or critical-path result of its own. Walking the
+  `parentId` pointers the server already flattened, to decide which section a card is drawn in, is
+  presentation grouping of the same kind as grouping by status, and is deliberately inside the
+  boundary. The walk is defensive about data it did not create: a cycle or an absent parent ends
+  it rather than hanging or losing the card.
 - **Grouping is the feature, not decoration.** Measured on a real 776-issue project: 620 issues
   have a parent, 432 of those pairs are task→epic, bugs sit outside the tree (4 of 34 parented),
   734 issues carry exactly one `feature:` label, and only 38 issues are not closed. So the board
@@ -160,8 +170,8 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   cross-checking `br show --json` on real repositories, after reading them the same way produced a
   tree that disagreed with the repository's own dotted-id convention on 620 of 620 edges.
   `discovered-from` and `related` are ignored: neither implies containment or ordering.
-- **The board bounds itself out loud.** `BOARD_ISSUE_LIMIT` (2000, ~480 KB at a measured 241 B per
-  issue) drops closed issues first so open work is never the part that goes missing;
+- **The board bounds itself out loud.** `BOARD_ISSUE_LIMIT` (2000, ~553 KB at a measured 283 B per
+  issue with the type/assignee overlay) drops closed issues first so open work is never the part that goes missing;
   `BOARD_LANE_CARD_LIMIT` (60) caps cards per group and reports the remainder as `+N more`; the
   header states the truncation without claiming an ordering the data does not carry. Only the
   status axis renders as horizontally scrolling columns — epics, features and types are lists of

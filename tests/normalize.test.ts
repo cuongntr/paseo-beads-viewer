@@ -27,6 +27,7 @@ import {
   normalizeSource,
   normalizeTracks,
   parseTrackerFacets,
+  readCsvRecords,
   readPayloadError,
 } from "../server/normalize";
 import {
@@ -429,12 +430,39 @@ describe("tracker facet overlay", () => {
         "good-1,task,ada",
         "too,many,columns,here",
         "short-row",
-        ',quoted,"row"',
         "  ,task,ada",
-        `long-${"x".repeat(600)},task,`,
       ].join("\n"),
     );
     expect([...facets.byId.keys()]).toEqual(["good-1"]);
+  });
+
+  it("keeps a row whose assignee is quoted free text", () => {
+    // `br` quotes any field holding a comma: 167 of 784 rows on a real project.
+    // Dropping those rows would silently untype exactly the assigned issues.
+    const facets = parseTrackerFacets(
+      ['id,issue_type,assignee', 'a-1,task,"Nguyễn, Văn A"', 'a-2,epic,"She said ""hi"""'].join("\n"),
+    );
+    expect(facets.byId.get("a-1")).toEqual({ type: "task", assignee: "Nguyễn, Văn A" });
+    expect(facets.byId.get("a-2")).toEqual({ type: "epic", assignee: 'She said "hi"' });
+  });
+
+  it("keeps a row whose quoted field spans a newline", () => {
+    const facets = parseTrackerFacets('id,issue_type,assignee\na-1,task,"two\nlines"\na-2,bug,ada');
+    expect(facets.byId.get("a-1")?.assignee).toBe("two\nlines");
+    expect(facets.byId.get("a-2")?.type).toBe("bug");
+  });
+
+  it("reports no overlay at all when the read was truncated", () => {
+    // A partial overlay is indistinguishable from genuinely untyped issues, so
+    // the board must lose the type axes rather than misgroup silently.
+    const rows = Array.from({ length: 30 }, (_, index) => `a-${index},task,`).join("\n");
+    const { records, truncated } = readCsvRecords(rows, 10);
+    expect(records).toHaveLength(10);
+    expect(truncated).toBe(true);
+
+    const long = `a-1,task,${"x".repeat(600)}`;
+    expect(parseTrackerFacets(long).ok).toBe(false);
+    expect(parseTrackerFacets('a-1,task,"unterminated').ok).toBe(false);
   });
 
   it("keeps the first row when the tracker omits the header", () => {
