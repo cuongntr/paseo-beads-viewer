@@ -223,9 +223,13 @@ export function normalizeTracks(payload: unknown, trackLimit = 8, itemLimit = 10
 /**
  * Reshapes `bv --robot-graph` into the complete issue set behind the board.
  *
- * Edge semantics, verified against `bv v0.25.0`: a `blocks` edge runs `from` →
- * `to` where `from` is blocked by `to`, so an inbound edge means "this issue
- * unblocks that one". `parent-child` runs parent → child.
+ * Edge semantics, verified against `bv v0.25.0` by cross-checking `br show
+ * --json` on real repositories. The two edge kinds do NOT share a direction:
+ *   - `blocks` runs `from` → `to` where `from` is blocked by `to`, so an
+ *     inbound edge means "this issue unblocks that one".
+ *   - `parent-child` runs `child` → `parent`, the opposite way round.
+ * `discovered-from` and `related` are ignored: neither implies containment or
+ * ordering, and inventing one would misgroup issues.
  *
  * When the project is larger than `limit`, open work is kept and closed issues
  * are dropped first: a truncated board should still show everything a person
@@ -248,8 +252,8 @@ export function normalizeBoardIssues(payload: unknown, limit = BOARD_ISSUE_LIMIT
     if (type === "blocks") {
       blockedByCounts.set(from, (blockedByCounts.get(from) ?? 0) + 1);
       unblocksCounts.set(to, (unblocksCounts.get(to) ?? 0) + 1);
-    } else if (type === "parent-child" && !parents.has(to)) {
-      parents.set(to, from);
+    } else if (type === "parent-child" && !parents.has(from)) {
+      parents.set(from, to);
     }
   }
 

@@ -115,8 +115,9 @@ export const planPayload = {
 } as const;
 
 /**
- * `bv --robot-graph --graph-format json`. A `blocks` edge runs `from` → `to`
- * where `from` is blocked by `to`; `parent-child` runs parent → child.
+ * `bv --robot-graph --graph-format json`. The two edge kinds run opposite ways,
+ * as verified against `br show --json`: a `blocks` edge runs `from` → `to`
+ * where `from` is blocked by `to`, while `parent-child` runs `child` → `parent`.
  */
 export const graphPayload = {
   generated_at: "2026-09-17T23:52:21Z",
@@ -137,7 +138,8 @@ export const graphPayload = {
     edges: [
       { from: "pib-blk1", to: "pib-x1q9", type: "blocks" },
       { from: "pib-cyhm", to: "pib-x1q9", type: "blocks" },
-      { from: "pib-old1", to: "pib-old2", type: "parent-child" },
+      // pib-old2 is a child of pib-old1, written the way bv emits it.
+      { from: "pib-old2", to: "pib-old1", type: "parent-child" },
     ],
   },
 } as const;

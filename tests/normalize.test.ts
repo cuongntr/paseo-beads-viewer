@@ -344,11 +344,15 @@ describe("board issues from the dependency graph", () => {
     expect(byId.get("pib-cyhm")?.blockedByCount).toBe(1);
   });
 
-  it("records the parent from a parent-child edge and ignores it for blocking", () => {
+  it("reads parent-child as child-to-parent, the opposite way round from blocks", () => {
     const byId = new Map(normalizeBoardIssues(graphPayload).issues.map((e) => [e.id, e]));
+    // The edge is `from: pib-old2, to: pib-old1`. Reading it the same way as a
+    // `blocks` edge would invert the tree and make the child own its parent.
     expect(byId.get("pib-old2")?.parentId).toBe("pib-old1");
-    expect(byId.get("pib-old2")?.blockedByCount).toBe(0);
     expect(byId.get("pib-old1")?.parentId).toBeNull();
+    // Containment is not blocking: a parent edge must not move either count.
+    expect(byId.get("pib-old2")?.blockedByCount).toBe(0);
+    expect(byId.get("pib-old1")?.unblocksCount).toBe(0);
   });
 
   it("keeps open work and drops closed issues first when the cap bites", () => {
