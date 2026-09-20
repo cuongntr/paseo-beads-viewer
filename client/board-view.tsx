@@ -1,5 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
+import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import type { BoardCard, BoardLane, BoardModel } from "./board";
 import { priorityLabel, priorityTone, statusIconName, statusLabel, toneColor } from "./format";
@@ -7,19 +8,19 @@ import { accessibilityFacts, Empty, Facet, IdentFacet, PriorityFacet } from "./r
 import type { PanelStyles } from "./styles";
 
 /**
- * Read-only working-set board.
+ * Read-only project board.
  *
- * This is deliberately *not* a project Kanban. `bv` caps triage at 12 picks and
- * the plan at 8 tracks of 10 items, so the board can only ever show issues that
- * one of those two analyses surfaced. The header says so, and there is no drag,
- * drop, or mutation affordance anywhere in this file.
+ * Lanes come from `bv --robot-graph`, so every issue in the project has a lane,
+ * including in-progress and closed work. Closed lanes start collapsed because a
+ * mature project has far more finished issues than live ones; the count is
+ * always visible, and one press expands them. There is no drag, drop, or
+ * mutation affordance anywhere in this file.
  */
 export function BoardView({
   styles,
   theme,
   board,
   compact,
-  totalTracked,
   missingSources,
   selectedId,
   onSelect,
@@ -28,16 +29,25 @@ export function BoardView({
   readonly theme: PluginTheme;
   readonly board: BoardModel;
   readonly compact: boolean;
-  /** `counts.total` from `bv`, or `null` when counts are unavailable. */
-  readonly totalTracked: number | null;
   /** Names of the `bv` sections that could not be read, e.g. `["plan"]`. */
   readonly missingSources: readonly string[];
   readonly selectedId: string | null;
   readonly onSelect: (issueId: string) => void;
 }) {
-  const provenance =
-    `${board.surfaced} of ${totalTracked === null ? "unknown" : totalTracked} surfaced` +
-    "  ·  bv working set  ·  read-only";
+  const [expanded, setExpanded] = useState<readonly string[]>([]);
+  const toggleLane = (status: string) =>
+    setExpanded((current) =>
+      current.includes(status) ? current.filter((entry) => entry !== status) : [...current, status],
+    );
+
+  const provenance = board.complete
+    ? `${board.surfaced} of ${board.total} issues  ·  whole project  ·  read-only`
+    : `${board.surfaced} surfaced  ·  bv working set  ·  read-only`;
+  const scope = board.complete
+    ? board.truncated
+      ? "Every open issue is here; some closed issues were left out to bound the payload. Search still reaches them."
+      : "Every issue bv reported, grouped by its own status. Closed lanes start collapsed."
+    : "The whole-project graph is unavailable, so only issues surfaced by triage picks and execution tracks appear here.";
   const gap =
     missingSources.length === 0
       ? null
@@ -49,10 +59,7 @@ export function BoardView({
       <Text style={styles.sectionMeta} accessibilityLabel={`Board shows ${provenance}`}>
         {provenance}
       </Text>
-      <Text style={styles.muted}>
-        Only issues surfaced by triage picks and execution tracks appear here. This is not the full
-        project.
-      </Text>
+      <Text style={styles.muted}>{scope}</Text>
       {gap === null ? null : <Text style={styles.danger}>{gap}</Text>}
     </View>
   );
@@ -65,12 +72,40 @@ export function BoardView({
           <Empty
             styles={styles}
             theme={theme}
-            message="bv surfaced no triage pick and no track item, so there is nothing to lay out."
+            message={
+              board.complete
+                ? "bv reported no issues in this project, so there is nothing to lay out."
+                : "bv surfaced no triage pick and no track item, so there is nothing to lay out."
+            }
           />
         </View>
       </View>
     );
   }
+
+  const laneBody = (lane: BoardLane) => {
+    const open = !lane.closed || expanded.includes(lane.status);
+    if (!open) return null;
+    return (
+      <View style={styles.boardLaneBody}>
+        {lane.cards.map((card) => (
+          <Card
+            key={card.id}
+            styles={styles}
+            theme={theme}
+            card={card}
+            selected={selectedId === card.id}
+            onSelect={onSelect}
+          />
+        ))}
+        {lane.hidden === 0 ? null : (
+          <Text style={styles.muted}>
+            +{lane.hidden} more in this lane. Use search to reach a specific issue.
+          </Text>
+        )}
+      </View>
+    );
+  };
 
   if (compact) {
     // Compact stacks full-width lane sections; narrow horizontal columns would be
@@ -81,19 +116,14 @@ export function BoardView({
         {header}
         {board.lanes.map((lane) => (
           <View key={lane.status} style={styles.boardLaneStacked}>
-            <LaneHeader styles={styles} theme={theme} lane={lane} />
-            <View style={styles.boardLaneBody}>
-              {lane.cards.map((card) => (
-                <Card
-                  key={card.id}
-                  styles={styles}
-                  theme={theme}
-                  card={card}
-                  selected={selectedId === card.id}
-                  onSelect={onSelect}
-                />
-              ))}
-            </View>
+            <LaneHeader
+              styles={styles}
+              theme={theme}
+              lane={lane}
+              expanded={expanded.includes(lane.status)}
+              onToggle={toggleLane}
+            />
+            {laneBody(lane)}
           </View>
         ))}
       </View>
@@ -107,19 +137,14 @@ export function BoardView({
         <ScrollView horizontal contentContainerStyle={styles.boardLaneRow}>
           {board.lanes.map((lane) => (
             <View key={lane.status} style={styles.boardLane}>
-              <LaneHeader styles={styles} theme={theme} lane={lane} />
-              <View style={styles.boardLaneBody}>
-                {lane.cards.map((card) => (
-                  <Card
-                    key={card.id}
-                    styles={styles}
-                    theme={theme}
-                    card={card}
-                    selected={selectedId === card.id}
-                    onSelect={onSelect}
-                  />
-                ))}
-              </View>
+              <LaneHeader
+                styles={styles}
+                theme={theme}
+                lane={lane}
+                expanded={expanded.includes(lane.status)}
+                onToggle={toggleLane}
+              />
+              {laneBody(lane)}
             </View>
           ))}
         </ScrollView>
@@ -132,21 +157,51 @@ function LaneHeader({
   styles,
   theme,
   lane,
+  expanded,
+  onToggle,
 }: {
   readonly styles: PanelStyles;
   readonly theme: PluginTheme;
   readonly lane: BoardLane;
+  readonly expanded: boolean;
+  readonly onToggle: (status: string) => void;
 }) {
-  return (
-    <View
-      style={styles.boardLaneHeader}
-      accessibilityRole="header"
-      accessibilityLabel={`${statusLabel(lane.status)}, ${lane.cards.length} surfaced issue${lane.cards.length === 1 ? "" : "s"}`}
-    >
-      <Icon name={statusIconName(lane.status)} size={13} color={theme.colors.foregroundMuted} />
+  const plural = lane.total === 1 ? "" : "s";
+  const content = (
+    <>
+      <Icon
+        name={lane.closed ? (expanded ? "ChevronDown" : "ChevronRight") : statusIconName(lane.status)}
+        size={13}
+        color={theme.colors.foregroundMuted}
+      />
       <Text style={styles.boardLaneTitle}>{statusLabel(lane.status)}</Text>
-      <Text style={styles.boardLaneCount}>{lane.cards.length}</Text>
-    </View>
+      <Text style={styles.boardLaneCount}>{lane.total}</Text>
+    </>
+  );
+
+  // Only closed lanes are collapsible, so only they get a button role.
+  if (!lane.closed) {
+    return (
+      <View
+        style={styles.boardLaneHeader}
+        accessibilityRole="header"
+        accessibilityLabel={`${statusLabel(lane.status)}, ${lane.total} issue${plural}`}
+      >
+        {content}
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      accessibilityLabel={`${statusLabel(lane.status)}, ${lane.total} issue${plural}, ${expanded ? "collapse" : "expand"}`}
+      onPress={() => onToggle(lane.status)}
+      style={({ pressed }) => [styles.boardLaneHeader, pressed ? styles.boardCardSelected : null]}
+    >
+      {content}
+    </Pressable>
   );
 }
 

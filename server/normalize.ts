@@ -1,7 +1,11 @@
 import {
+  BOARD_ISSUE_LIMIT,
+  isClosedStatus,
   type Alert,
   type AlertSummary,
   type Blocker,
+  type BoardIssue,
+  type BoardSnapshot,
   type IssueDetail,
   type PlanSummary,
   type ProjectCounts,
@@ -214,6 +218,71 @@ export function normalizeTracks(payload: unknown, trackLimit = 8, itemLimit = 10
     if (tracks.length >= trackLimit) break;
   }
   return tracks;
+}
+
+/**
+ * Reshapes `bv --robot-graph` into the complete issue set behind the board.
+ *
+ * Edge semantics, verified against `bv v0.25.0`: a `blocks` edge runs `from` →
+ * `to` where `from` is blocked by `to`, so an inbound edge means "this issue
+ * unblocks that one". `parent-child` runs parent → child.
+ *
+ * When the project is larger than `limit`, open work is kept and closed issues
+ * are dropped first: a truncated board should still show everything a person
+ * can act on, and `truncated` says so out loud.
+ */
+export function normalizeBoardIssues(payload: unknown, limit = BOARD_ISSUE_LIMIT): BoardSnapshot {
+  const adjacency = asRecord(asRecord(payload)?.["adjacency"]);
+  const rawNodes = readArray(adjacency, "nodes");
+  if (rawNodes.length === 0) return { issues: [], total: 0, truncated: false };
+
+  const blockedByCounts = new Map<string, number>();
+  const unblocksCounts = new Map<string, number>();
+  const parents = new Map<string, string>();
+  for (const rawEdge of readArray(adjacency, "edges")) {
+    const edge = asRecord(rawEdge);
+    const from = readString(edge, "from");
+    const to = readString(edge, "to");
+    if (from === null || to === null) continue;
+    const type = readString(edge, "type");
+    if (type === "blocks") {
+      blockedByCounts.set(from, (blockedByCounts.get(from) ?? 0) + 1);
+      unblocksCounts.set(to, (unblocksCounts.get(to) ?? 0) + 1);
+    } else if (type === "parent-child" && !parents.has(to)) {
+      parents.set(to, from);
+    }
+  }
+
+  const open: BoardIssue[] = [];
+  const closed: BoardIssue[] = [];
+  const seen = new Set<string>();
+  for (const rawNode of rawNodes) {
+    const node = asRecord(rawNode);
+    const id = readString(node, "id");
+    if (id === null || seen.has(id)) continue;
+    seen.add(id);
+    const status = readString(node, "status") ?? "unknown";
+    const issue: BoardIssue = {
+      id,
+      title: readString(node, "title") ?? id,
+      status,
+      priority: readNumber(node, "priority"),
+      labels: readStringArray(node, "labels"),
+      blockedByCount: blockedByCounts.get(id) ?? 0,
+      unblocksCount: unblocksCounts.get(id) ?? 0,
+      parentId: parents.get(id) ?? null,
+    };
+    if (isClosedStatus(status)) closed.push(issue);
+    else open.push(issue);
+  }
+
+  const total = open.length + closed.length;
+  if (total <= limit) return { issues: [...open, ...closed], total, truncated: false };
+  return {
+    issues: [...open, ...closed].slice(0, Math.max(limit, open.length)),
+    total,
+    truncated: true,
+  };
 }
 
 export function normalizePlanSummary(payload: unknown): PlanSummary | null {

@@ -114,6 +114,34 @@ export const planPayload = {
   },
 } as const;
 
+/**
+ * `bv --robot-graph --graph-format json`. A `blocks` edge runs `from` → `to`
+ * where `from` is blocked by `to`; `parent-child` runs parent → child.
+ */
+export const graphPayload = {
+  generated_at: "2026-09-17T23:52:21Z",
+  version: "v0.25.0",
+  source_path: "/repo/.beads/beads.db",
+  source_kind: "sqlite",
+  format: "json",
+  nodes: 5,
+  edges: 3,
+  adjacency: {
+    nodes: [
+      { id: "pib-cyhm", title: "WP-004: Recover instructions", status: "open", priority: 2, labels: ["core"] },
+      { id: "pib-x1q9", title: "WP-003: Admit writers", status: "in_progress", priority: 1, labels: [] },
+      { id: "pib-blk1", title: "WP-005: Await review", status: "blocked", priority: 3, labels: [] },
+      { id: "pib-old1", title: "WP-001: Package foundation", status: "closed", priority: 2, labels: [] },
+      { id: "pib-old2", title: "WP-002: Stable contracts", status: "closed", priority: null, labels: [] },
+    ],
+    edges: [
+      { from: "pib-blk1", to: "pib-x1q9", type: "blocks" },
+      { from: "pib-cyhm", to: "pib-x1q9", type: "blocks" },
+      { from: "pib-old1", to: "pib-old2", type: "parent-child" },
+    ],
+  },
+} as const;
+
 export const alertsPayload = {
   generated_at: "2026-09-17T23:52:19Z",
   version: "v0.25.0",

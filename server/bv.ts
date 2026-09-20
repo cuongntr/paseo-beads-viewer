@@ -17,7 +17,7 @@ const CLEAN_BEADS_ENV = { BEADS_DIR: null, BEADS_DB: null, BEADS_JSONL: null, BD
  * literal; nothing is templated from user input except the bounded search
  * query and limit below, which are passed as separate argv values.
  */
-export type BvRobotCommand = "version" | "triage" | "plan" | "alerts" | "search";
+export type BvRobotCommand = "version" | "triage" | "plan" | "alerts" | "graph" | "search";
 
 interface BvInvocation {
   readonly label: string;
@@ -73,6 +73,13 @@ export function bvInvocation(command: BvRobotCommand, params?: BvSearchParams): 
       return { label: "bv --robot-plan", args: ["--robot-plan", ...JSON_FORMAT_ARGS] };
     case "alerts":
       return { label: "bv --robot-alerts", args: ["--robot-alerts", ...JSON_FORMAT_ARGS] };
+    case "graph":
+      // The only read that returns every issue, which is what the board needs;
+      // triage and plan both hand back analysis-selected subsets.
+      return {
+        label: "bv --robot-graph",
+        args: ["--robot-graph", "--graph-format", "json", ...JSON_FORMAT_ARGS],
+      };
     case "search": {
       if (params === undefined) {
         throw new Error("bv --robot-search requires search parameters");

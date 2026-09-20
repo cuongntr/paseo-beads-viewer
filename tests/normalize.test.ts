@@ -17,6 +17,7 @@ import {
   normalizeAlertSummary,
   normalizeAlerts,
   normalizeBlockers,
+  normalizeBoardIssues,
   normalizeCounts,
   normalizeIssueDetail,
   normalizePlanSummary,
@@ -30,6 +31,7 @@ import {
   alertsPayload,
   bdShowPayload,
   brShowPayload,
+  graphPayload,
   missingProjectPayload,
   planPayload,
   searchPayload,
@@ -316,6 +318,72 @@ describe("project classification", () => {
   });
 });
 
+describe("board issues from the dependency graph", () => {
+  it("returns every node, whatever its status", () => {
+    const board = normalizeBoardIssues(graphPayload);
+    expect(board.total).toBe(5);
+    expect(board.truncated).toBe(false);
+    expect(board.issues.map((entry) => entry.id).sort()).toEqual([
+      "pib-blk1",
+      "pib-cyhm",
+      "pib-old1",
+      "pib-old2",
+      "pib-x1q9",
+    ]);
+    expect(board.issues.find((entry) => entry.id === "pib-x1q9")?.status).toBe("in_progress");
+    expect(board.issues.filter((entry) => entry.status === "closed")).toHaveLength(2);
+  });
+
+  it("reads blocks edges as from-is-blocked-by-to", () => {
+    const board = normalizeBoardIssues(graphPayload);
+    const byId = new Map(board.issues.map((entry) => [entry.id, entry]));
+    // Two issues declare pib-x1q9 as their prerequisite.
+    expect(byId.get("pib-x1q9")?.unblocksCount).toBe(2);
+    expect(byId.get("pib-x1q9")?.blockedByCount).toBe(0);
+    expect(byId.get("pib-blk1")?.blockedByCount).toBe(1);
+    expect(byId.get("pib-cyhm")?.blockedByCount).toBe(1);
+  });
+
+  it("records the parent from a parent-child edge and ignores it for blocking", () => {
+    const byId = new Map(normalizeBoardIssues(graphPayload).issues.map((e) => [e.id, e]));
+    expect(byId.get("pib-old2")?.parentId).toBe("pib-old1");
+    expect(byId.get("pib-old2")?.blockedByCount).toBe(0);
+    expect(byId.get("pib-old1")?.parentId).toBeNull();
+  });
+
+  it("keeps open work and drops closed issues first when the cap bites", () => {
+    const board = normalizeBoardIssues(graphPayload, 3);
+    expect(board.total).toBe(5);
+    expect(board.truncated).toBe(true);
+    expect(board.issues.map((entry) => entry.id)).toEqual(["pib-cyhm", "pib-x1q9", "pib-blk1"]);
+  });
+
+  it("never drops an open issue, even below the requested cap", () => {
+    const board = normalizeBoardIssues(graphPayload, 1);
+    expect(board.issues.filter((entry) => entry.status !== "closed")).toHaveLength(3);
+    expect(board.truncated).toBe(true);
+  });
+
+  it("reports an empty board for a payload with no graph rather than throwing", () => {
+    for (const payload of [null, {}, { adjacency: {} }, { adjacency: { nodes: [] } }]) {
+      expect(normalizeBoardIssues(payload)).toEqual({ issues: [], total: 0, truncated: false });
+    }
+  });
+
+  it("skips nodes with no id and deduplicates repeated ids", () => {
+    const board = normalizeBoardIssues({
+      adjacency: {
+        nodes: [{ title: "no id" }, { id: "a-1" }, { id: "a-1", title: "duplicate" }],
+        edges: [],
+      },
+    });
+    expect(board.issues).toHaveLength(1);
+    expect(board.issues[0]?.id).toBe("a-1");
+    // A node with no title falls back to its id rather than rendering blank.
+    expect(board.issues[0]?.title).toBe("a-1");
+  });
+});
+
 describe("dashboard contract", () => {
   it("validates a fully degraded dashboard payload", () => {
     const error = { code: "unavailable" as const, message: "bv was not found", exitCode: null };
@@ -329,6 +397,7 @@ describe("dashboard contract", () => {
       counts: null,
       recommendations: [],
       blockers: [],
+      board: { issues: [], total: 0, truncated: false },
       tracks: [],
       planSummary: null,
       alerts: [],
@@ -337,6 +406,7 @@ describe("dashboard contract", () => {
         triage: { status: "unavailable" as const, error },
         plan: { status: "unavailable" as const, error },
         alerts: { status: "unavailable" as const, error },
+        graph: { status: "unavailable" as const, error },
       },
       fetchedAt: new Date().toISOString(),
       cached: false,
@@ -355,6 +425,7 @@ describe("dashboard contract", () => {
       counts: normalizeCounts(triagePayload),
       recommendations: normalizeRecommendations(triagePayload),
       blockers: normalizeBlockers(triagePayload),
+      board: normalizeBoardIssues(graphPayload),
       tracks: normalizeTracks(planPayload),
       planSummary: normalizePlanSummary(planPayload),
       alerts: normalizeAlerts(alertsPayload),
@@ -363,6 +434,7 @@ describe("dashboard contract", () => {
         triage: { status: "ok" as const, error: null },
         plan: { status: "ok" as const, error: null },
         alerts: { status: "ok" as const, error: null },
+        graph: { status: "ok" as const, error: null },
       },
       fetchedAt: new Date().toISOString(),
       cached: false,

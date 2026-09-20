@@ -26,7 +26,7 @@ client/ (Paseo app, React Native)      shared/ (both)              server/ (daem
 ─────────────────────────────────      ──────────────────          ───────────────────────────
 panel.tsx        TanStack Query UI     beads.ts  Zod types         dashboard.ts  triage+plan+alerts
 rows.tsx         priority-rail rows    rpc.ts    RPC contracts     search.ts     robot-search
-board.ts         working-set grouping            attachment source issue.ts      tracker show
+board.ts         status-lane grouping            attachment source issue.ts      tracker show
 board-view.tsx   read-only board                                  attachments.ts workspace fanout
 markdown.ts      bounded md parser                                tracker.ts    br vs bd identity
 markdown-view.tsx md renderer
@@ -127,7 +127,7 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
     dedicated, independently scrollable detail screen with a Back action. No bottom sheet, no
     absolute positioning.
 - **An operational view switcher** is the one distinctive element: `Next up` (triage picks),
-  `Plan` (execution tracks), `Risks` (blockers plus alerts), and `Board` (the working set) are
+  `Plan` (execution tracks), `Risks` (blockers plus alerts), and `Board` (every issue by status) are
   mutually exclusive, carry item counts, use `tablist`/`tab` accessibility roles, and mark the
   active view with `accessibilityState.selected`. A view whose backing `bv` section is unavailable
   shows `—`. Views are derived purely from the existing dashboard payload; no new RPC or analysis.
@@ -137,17 +137,24 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   place.
 - **Search is always reachable** from the master pane. Submitting a query temporarily replaces the
   list with search results and shows an explicit back control returning to the active view.
-- **The `Board` view is an honest working set, not a project Kanban.** Cards are the deduplicated
-  union of triage recommendations and every plan track item — the only two `bv` sections that carry
-  an authoritative per-issue status. Blockers are excluded on purpose: the blocker payload has no
-  status, so including it would require inventing a lane. Because `bv` caps recommendations at 12
-  and the plan at 8 tracks of 10 items, the board can never be complete, and it says so in place:
-  `<surfaced> of <counts.total> surfaced · bv working set · read-only`, plus an explicit line when
-  a source section is unavailable. Lanes are discovered from the raw statuses (preserved verbatim)
-  and ordered in-progress, blocked, ready/open, unknown alphabetically, closed/done last; cards
-  order by priority then title then id. Non-compact renders fixed-width horizontally scrollable
-  lanes; compact stacks full-width lane sections instead of unreadable narrow columns. Clicking a
-  card selects the issue in the existing inspector. There is no drag, drop, or mutation control.
+- **The `Board` view is the whole project, read-only.** Cards come from `bv --robot-graph`, the one
+  `bv` read that returns every issue rather than an analysis-selected subset, so in-progress,
+  blocked, open and closed work all have a lane. Triage picks and plan tracks are folded in only as
+  *enrichment* — assignee, type, track membership, and the triage-pick flag — never as the source of
+  which issues exist; an id known only to triage never becomes a card. Dependency counts come from
+  the graph's `blocks` edges, where `from` is blocked by `to`. The header states the scope in place:
+  `<surfaced> of <total> issues · whole project · read-only`. When the graph read fails the board
+  falls back to the old triage+plan working set, relabels itself `bv working set`, and names the
+  missing source rather than passing a subset off as the project. Lanes are discovered from the raw
+  statuses (preserved verbatim) and ordered in-progress, blocked, ready/open, unknown
+  alphabetically, closed/done last; cards order by priority then title then id. A mature project has
+  far more closed issues than live ones, so closed lanes start collapsed behind their count and
+  expand on press, and every lane renders at most `BOARD_LANE_CARD_LIMIT` (60) cards with the
+  remainder reported as `+N more`. The payload itself is bounded at `BOARD_ISSUE_LIMIT` (2000)
+  issues, dropping closed issues first so open work is never the part that goes missing (which closed issues survive is unordered, and the header does not claim otherwise); the header
+  says so when that happens. Non-compact renders fixed-width horizontally scrollable lanes; compact
+  stacks full-width lane sections instead of unreadable narrow columns. Clicking a card selects the
+  issue in the existing inspector. There is no drag, drop, or mutation control.
 - **Priority owns the colour channel.** Every issue row and board card is a 3 px rail coloured by
   priority (P0 danger, P1 warning, P2 accent, lower or absent neutral, all from `theme.colors`).
   Status is never colour-coded: it is a Lucide `Icon` plus its text, so an unknown status from a
@@ -189,8 +196,8 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
 
 - Workspace panel at `workspace` and `explorer` locations, with refresh.
 - Overview counts, authority/freshness state, triage picks, execution tracks, blockers, alerts.
-- A read-only working-set `Board` view derived client-side from triage picks and plan tracks,
-  labelled as a surfaced subset rather than a complete project board.
+- A read-only whole-project `Board` view grouped by issue status, sourced from `bv --robot-graph`
+  and enriched by triage picks and plan tracks, with collapsed closed lanes and bounded payload.
 - Bounded issue search and selectable issue detail, with issue prose and comments rendered through
   the bounded Markdown subset.
 - Composer attachment source for Beads issues across recent workspaces.

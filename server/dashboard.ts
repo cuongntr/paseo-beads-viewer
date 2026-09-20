@@ -9,6 +9,7 @@ import {
   normalizeAlertSummary,
   normalizeAlerts,
   normalizeBlockers,
+  normalizeBoardIssues,
   normalizeCounts,
   normalizePlanSummary,
   normalizeRecommendations,
@@ -31,6 +32,11 @@ export function clearDashboardCache(): void {
 }
 
 const OK_SECTION: SectionState = { status: "ok", error: null };
+
+/** No graph read happened, so the board has nothing rather than a guess. */
+function emptyBoard(): DashboardOutput["board"] {
+  return { issues: [], total: 0, truncated: false };
+}
 
 function degraded(error: CommandError): SectionState {
   return { status: "unavailable", error };
@@ -106,6 +112,7 @@ export async function getDashboard(
       counts: null,
       recommendations: [],
       blockers: [],
+      board: emptyBoard(),
       tracks: [],
       planSummary: null,
       alerts: [],
@@ -114,6 +121,7 @@ export async function getDashboard(
         triage: degraded(workspace.error),
         plan: degraded(workspace.error),
         alerts: degraded(workspace.error),
+        graph: degraded(workspace.error),
       },
       fetchedAt,
       cached: false,
@@ -141,6 +149,7 @@ export async function getDashboard(
       counts: null,
       recommendations: [],
       blockers: [],
+      board: emptyBoard(),
       tracks: [],
       planSummary: null,
       alerts: [],
@@ -149,6 +158,7 @@ export async function getDashboard(
         triage: degraded(version.error),
         plan: degraded(version.error),
         alerts: degraded(version.error),
+        graph: degraded(version.error),
       },
       fetchedAt,
       cached: false,
@@ -156,15 +166,18 @@ export async function getDashboard(
   }
 
   // These analyses are logically independent; server/bv serializes their subprocesses per workspace to avoid bd export races.
-  const [triage, plan, alerts] = await Promise.all([
+  const [triage, plan, alerts, graph] = await Promise.all([
     runBvJson("triage", directory, identity),
     runBvJson("plan", directory, identity),
     runBvJson("alerts", directory, identity),
+    runBvJson("graph", directory, identity),
   ]);
 
   const triagePayload = triage.ok ? triage.value : null;
   const planPayload = plan.ok ? plan.value : null;
   const alertsPayload = alerts.ok ? alerts.value : null;
+  const graphSection = sectionOf(graph);
+  const graphPayload = graphSection.status === "ok" && graph.ok ? graph.value : null;
 
   const classification = classifyProject(triage);
   const projectState = classification.projectState;
@@ -189,6 +202,7 @@ export async function getDashboard(
     counts: normalizeCounts(triagePayload),
     recommendations: normalizeRecommendations(triagePayload),
     blockers: normalizeBlockers(triagePayload),
+    board: normalizeBoardIssues(graphPayload),
     tracks: normalizeTracks(planPayload),
     planSummary: normalizePlanSummary(planPayload),
     alerts: normalizeAlerts(alertsPayload),
@@ -197,6 +211,7 @@ export async function getDashboard(
       triage: triageSection,
       plan: sectionOf(plan),
       alerts: sectionOf(alerts),
+      graph: graphSection,
     },
     fetchedAt,
     cached: false,

@@ -116,6 +116,56 @@ export const PlanSummarySchema = z.object({
 });
 export type PlanSummary = z.output<typeof PlanSummarySchema>;
 
+/**
+ * One issue from `bv --robot-graph`, which is the only `bv` read that returns
+ * the *whole* project rather than an analysis-selected subset. Status stays an
+ * opaque string; the dependency counts are derived from the graph's `blocks`
+ * edges, where `from` is blocked by `to`.
+ */
+export const BoardIssueSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: z.string(),
+  priority: z.number().nullable(),
+  labels: z.array(z.string()),
+  blockedByCount: z.number(),
+  unblocksCount: z.number(),
+  parentId: z.string().nullable(),
+});
+export type BoardIssue = z.output<typeof BoardIssueSchema>;
+
+export const BoardSnapshotSchema = z.object({
+  issues: z.array(BoardIssueSchema),
+  /** Issue count `bv` reported before any cap was applied. */
+  total: z.number(),
+  /** True when {@link BOARD_ISSUE_LIMIT} dropped closed issues from `issues`. */
+  truncated: z.boolean(),
+});
+export type BoardSnapshot = z.output<typeof BoardSnapshotSchema>;
+
+/**
+ * Upper bound on issues carried to the client in one dashboard payload.
+ * Measured against a real 776-issue project: 187 KB normalized, ~241 B per
+ * issue. This cap therefore costs ~480 KB in the worst case, which a phone
+ * fetches over the relay, so it is deliberately below what the 4 MB subprocess
+ * output cap would allow.
+ */
+export const BOARD_ISSUE_LIMIT = 2000;
+
+/** Status spellings every known tracker uses for finished work. */
+export const CLOSED_STATUSES: readonly string[] = [
+  "closed",
+  "done",
+  "completed",
+  "resolved",
+  "cancelled",
+  "canceled",
+];
+
+export function isClosedStatus(status: string): boolean {
+  return CLOSED_STATUSES.includes(status.trim().toLowerCase());
+}
+
 export const AlertSchema = z.object({
   type: z.string(),
   severity: z.string(),

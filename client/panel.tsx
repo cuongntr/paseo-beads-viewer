@@ -177,7 +177,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   const boardMissingSources = useMemo(() => boardGaps(data), [data]);
   const boardActive = submittedQuery === null && viewMode === "board";
 
-  const views: readonly ViewSpec[] = useMemo(() => viewSpecs(data), [data]);
+  const views: readonly ViewSpec[] = useMemo(() => viewSpecs(data, boardModel), [data, boardModel]);
   const activeViewLabel = views.find((view) => view.mode === viewMode)?.label ?? "Next up";
   const searchActive = submittedQuery !== null;
 
@@ -326,7 +326,6 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       theme={theme}
       board={boardModel}
       compact={layout.compact}
-      totalTracked={data.counts?.total ?? null}
       missingSources={boardMissingSources}
       selectedId={selectedId}
       onSelect={setSelectedId}
@@ -484,7 +483,7 @@ function noticeFor(data: DashboardResult): Notice | null {
   return null;
 }
 
-function viewSpecs(data: DashboardResult | null): readonly ViewSpec[] {
+function viewSpecs(data: DashboardResult | null, board: BoardModel): readonly ViewSpec[] {
   if (data === null) {
     return [
       { mode: "next", label: "Next up", count: null },
@@ -504,32 +503,52 @@ function viewSpecs(data: DashboardResult | null): readonly ViewSpec[] {
     {
       mode: "board",
       label: "Board",
-      // The board is a working set: its count is the deduplicated union of the
-      // sections that actually loaded, not the project total.
-      count: !triageOk && data.sections.plan.status !== "ok" ? null : boardFor(data).surfaced,
+      // The graph owns the board; triage and plan only enrich it, so the count
+      // is null only when no source at all could be read.
+      count:
+        data.sections.graph.status !== "ok" && !triageOk && data.sections.plan.status !== "ok"
+          ? null
+          : board.total,
     },
   ];
 }
 
+const EMPTY_BOARD_INPUT = {
+  graphAvailable: false,
+  issues: [],
+  total: 0,
+  truncated: false,
+  recommendations: [],
+  tracks: [],
+} as const;
+
 /**
- * The board's working set: the deduplicated union of the sections that actually
- * loaded. A degraded section contributes nothing rather than an invented lane.
+ * The board is the whole issue graph; triage and plan only add assignee, type
+ * and track membership. A degraded section contributes nothing rather than an
+ * invented lane.
  */
 function boardFor(data: DashboardResult | null): BoardModel {
-  if (data === null) return buildBoard([], []);
-  return buildBoard(
-    data.sections.triage.status === "ok" ? data.recommendations : [],
-    data.sections.plan.status === "ok" ? data.tracks : [],
-  );
+  if (data === null) return buildBoard(EMPTY_BOARD_INPUT);
+  const graphOk = data.sections.graph.status === "ok";
+  return buildBoard({
+    graphAvailable: graphOk,
+    issues: graphOk ? data.board.issues : [],
+    total: graphOk ? data.board.total : 0,
+    truncated: graphOk && data.board.truncated,
+    recommendations: data.sections.triage.status === "ok" ? data.recommendations : [],
+    tracks: data.sections.plan.status === "ok" ? data.tracks : [],
+  });
 }
 
-/** Human-readable names of the board sources `bv` could not provide. */
+/**
+ * Human-readable names of the board sources `bv` could not provide. A missing
+ * graph is the only gap that removes issues; the other two remove detail, and
+ * only matter while the fallback working set is what the board is showing.
+ */
 function boardGaps(data: DashboardResult | null): readonly string[] {
   if (data === null) return [];
-  return [
-    data.sections.triage.status === "ok" ? null : "triage picks",
-    data.sections.plan.status === "ok" ? null : "execution tracks",
-  ].filter((part): part is string => part !== null);
+  if (data.sections.graph.status !== "ok") return ["the whole-project graph"];
+  return [];
 }
 
 function ViewSwitcher({

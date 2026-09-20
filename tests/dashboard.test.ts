@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { CommandResult } from "../server/command";
-import { alertsPayload, missingProjectPayload, planPayload, triagePayload } from "./fixtures";
+import { alertsPayload, graphPayload, missingProjectPayload, planPayload, triagePayload } from "./fixtures";
 
 /**
  * The dashboard handler is exercised without a Beads repository: `bv` is mocked
@@ -76,7 +76,7 @@ beforeEach(() => {
 
 describe("dashboard assembly", () => {
   it("reports every section as ok for a healthy project and names the tracker bv declared", async () => {
-    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload) });
+    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
     const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
 
     expect(result.projectState).toBe("ready");
@@ -90,8 +90,48 @@ describe("dashboard assembly", () => {
     expect(result.tracks).toHaveLength(1);
     expect(result.alerts).toHaveLength(3);
     expect(result.cached).toBe(false);
-    // Triage, plan, and alerts are read in parallel.
-    expect(runBvJson).toHaveBeenCalledTimes(3);
+    // Triage, plan, alerts, and the graph are read in parallel.
+    expect(runBvJson).toHaveBeenCalledTimes(4);
+  });
+
+  it("carries the whole issue graph onto the board, closed issues included", async () => {
+    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
+    const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
+
+    expect(result.sections.graph.status).toBe("ok");
+    expect(result.board.total).toBe(5);
+    expect(result.board.truncated).toBe(false);
+    // The board must carry issues triage never surfaced, in every status.
+    expect(result.board.issues.map((entry) => entry.status).sort()).toEqual([
+      "blocked",
+      "closed",
+      "closed",
+      "in_progress",
+      "open",
+    ]);
+    // Wiring check: these counts can only come from the graph's own edges.
+    const byId = new Map(result.board.issues.map((entry) => [entry.id, entry]));
+    expect(byId.get("pib-x1q9")?.unblocksCount).toBe(2);
+    expect(byId.get("pib-blk1")?.blockedByCount).toBe(1);
+  });
+
+  it("empties the board and marks the graph section when only the graph read fails", async () => {
+    respond({
+      triage: ok(triagePayload),
+      plan: ok(planPayload),
+      alerts: ok(alertsPayload),
+      graph: err("timeout", "bv --robot-graph timed out."),
+    });
+    const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
+
+    // Every other section stays usable; only the board loses its source.
+    expect(result.projectState).toBe("ready");
+    expect(result.sections.triage.status).toBe("ok");
+    expect(result.sections.graph).toEqual({
+      status: "unavailable",
+      error: { code: "timeout", message: "bv --robot-graph timed out.", exitCode: null },
+    });
+    expect(result.board).toEqual({ issues: [], total: 0, truncated: false });
   });
 
   it("keeps triage usable when plan and alerts are unavailable", async () => {
@@ -99,6 +139,7 @@ describe("dashboard assembly", () => {
       triage: ok(triagePayload),
       plan: err("timeout", "bv --robot-plan timed out."),
       alerts: err("exit", "bv --robot-alerts failed: boom", 2),
+      graph: ok(graphPayload),
     });
     const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
 
@@ -121,6 +162,7 @@ describe("dashboard assembly", () => {
       triage: err("timeout", "bv --robot-triage timed out."),
       plan: err("timeout", "bv --robot-plan timed out."),
       alerts: ok(alertsPayload),
+      graph: err("timeout", "bv --robot-graph timed out."),
     });
     const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
 
@@ -135,6 +177,7 @@ describe("dashboard assembly", () => {
       triage: ok(missingProjectPayload),
       plan: ok(missingProjectPayload),
       alerts: ok(missingProjectPayload),
+      graph: ok(missingProjectPayload),
     });
     const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
 
@@ -167,22 +210,22 @@ describe("dashboard assembly", () => {
   });
 
   it("serves a healthy result from the short-lived cache and marks it cached", async () => {
-    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload) });
+    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
     const first = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
     const second = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
 
     expect(first.cached).toBe(false);
     expect(second.cached).toBe(true);
-    expect(runBvJson).toHaveBeenCalledTimes(3);
+    expect(runBvJson).toHaveBeenCalledTimes(4);
   });
 
   it("bypasses the cache for an explicit refresh", async () => {
-    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload) });
+    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
     await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
     const refreshed = await getDashboard({ workspaceId: "ws-1", refresh: true }, context(WORKSPACE_DIR));
 
     expect(refreshed.cached).toBe(false);
-    expect(runBvJson).toHaveBeenCalledTimes(6);
+    expect(runBvJson).toHaveBeenCalledTimes(8);
   });
 
   it("does not let an older request overwrite a completed refresh", async () => {
@@ -224,11 +267,12 @@ describe("dashboard assembly", () => {
       triage: err("timeout", "bv --robot-triage timed out."),
       plan: ok(planPayload),
       alerts: ok(alertsPayload),
+      graph: ok(graphPayload),
     });
     await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
     const second = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
 
     expect(second.cached).toBe(false);
-    expect(runBvJson).toHaveBeenCalledTimes(6);
+    expect(runBvJson).toHaveBeenCalledTimes(8);
   });
 });
