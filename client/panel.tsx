@@ -400,7 +400,13 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       <View style={styles.summaryBar}>{summary}</View>
       <View style={styles.workbench}>
         {/* Board view needs the width; operational views favour the working list 5:4. */}
-        <View style={[styles.masterPane, boardActive ? styles.masterPaneWide : null]}>
+        <View
+          style={[
+            styles.masterPane,
+            boardActive ? styles.masterPaneWide : null,
+            selectedId === null ? styles.masterPaneAlone : null,
+          ]}
+        >
           <View style={styles.masterHeader}>{masterControls}</View>
           {boardActive ? (
             board
@@ -414,18 +420,12 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
             </ScrollView>
           )}
         </View>
-        <View style={[styles.detailPane, boardActive ? styles.detailPaneNarrow : null]}>
-          <ScrollView key={selectedId ?? "empty"} style={styles.paneScroll} contentContainerStyle={styles.detailContent}>
-            {selectedId === null ? (
-              <View style={styles.stateBlock}>
-                <SectionHeader styles={styles} theme={theme} title="Issue inspector" />
-                <Empty
-                  styles={styles}
-                  theme={theme}
-                  message="Select an issue on the left to read its detail here."
-                />
-              </View>
-            ) : (
+        {/* An empty inspector is a third of the panel spent on a sentence. The
+            pane appears when there is an issue to read and gives the width back
+            when there is not. */}
+        {selectedId === null ? null : (
+          <View style={[styles.detailPane, boardActive ? styles.detailPaneNarrow : null]}>
+            <ScrollView key={selectedId} style={styles.paneScroll} contentContainerStyle={styles.detailContent}>
               <>
                 <View style={styles.backRow}>
                   <View style={styles.headerText}>
@@ -446,9 +446,9 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
                 </View>
                 <IssueInspectorBody styles={styles} theme={theme} issue={issue} />
               </>
-            )}
-          </ScrollView>
-        </View>
+            </ScrollView>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -623,33 +623,30 @@ function ProjectSummary({
 }) {
   const authority = data.source?.authority ?? null;
   const counts = data.counts;
+  // The authority label heads the row, so repeating it inside the provenance
+  // would print the same three words twice.
   const provenance = [
-    authorityLabel(authority),
     data.source?.sourceKind ?? null,
     shortHash(data.source?.dataHash ?? null) === null ? null : `hash ${shortHash(data.source?.dataHash ?? null)}`,
     relativeAge(data.source?.generatedAt ?? null),
+    authority === null ? null : `${authority.visible} visible`,
+    authority === null || authority.tombstones === 0 ? null : `${authority.tombstones} tombstones`,
   ]
     .filter((part): part is string => part !== null)
     .join("  ·  ");
+  const warning = authority?.warnings[0] ?? null;
 
   return (
-    <View style={styles.stateBlock}>
-      <RailRow
-        styles={styles}
-        theme={theme}
-        tone={authorityTone(authority)}
-        title={authorityLabel(authority)}
-        meta={provenance}
-        note={
-          authority === null
-            ? null
-            : authority.warnings.length === 0
-              ? `${authority.visible} visible · ${authority.valid} valid · ${authority.tombstones} tombstones`
-              : authority.warnings[0]
-        }
-      />
+    <View style={styles.summaryStack}>
+      <View style={styles.summaryLine}>
+        <View style={[styles.summaryRail, { backgroundColor: toneColor(theme, authorityTone(authority)) }]} />
+        <Text style={styles.summaryAuthority}>{authorityLabel(authority)}</Text>
+        <Text style={styles.summaryProvenance} numberOfLines={1}>
+          {provenance}
+        </Text>
+      </View>
       {counts === null ? (
-        <Empty styles={styles} theme={theme} message="bv returned no counts for this project." />
+        <Text style={styles.muted}>bv returned no counts for this project.</Text>
       ) : (
         <View style={styles.pulseRow}>
           <Pulse styles={styles} label="open" value={counts.open} />
@@ -659,6 +656,7 @@ function ProjectSummary({
           <Pulse styles={styles} label="tracked" value={counts.total} />
         </View>
       )}
+      {warning === null ? null : <Text style={styles.muted}>{warning}</Text>}
     </View>
   );
 }
@@ -885,7 +883,7 @@ function Pulse({
   return (
     <View style={styles.pulseCell} accessibilityLabel={`${value} ${label}`}>
       <Text style={styles.pulseValue}>{value}</Text>
-      <Text style={styles.pulseLabel}>{label}</Text>
+      <Text style={styles.pulseLabel}> {label}</Text>
     </View>
   );
 }

@@ -49,13 +49,13 @@ export function BoardView({
     );
 
   const provenance = board.complete
-    ? `${board.live} live of ${board.total} issues  ·  whole project  ·  read-only`
-    : `${board.surfaced} surfaced  ·  bv working set  ·  read-only`;
+    ? `${board.live} live of ${board.total}  ·  read-only`
+    : `${board.surfaced} surfaced  ·  working set  ·  read-only`;
   const scope = board.complete
     ? board.truncated
       ? "Every open issue is here; some closed issues were left out to bound the payload. Search still reaches them."
       : null
-    : "The whole-project graph is unavailable, so only issues surfaced by triage picks and execution tracks appear here.";
+    : "Whole-project graph unavailable: only triage picks and track items appear here.";
   // The axis the reader asked for is not always the axis they got.
   const axisFallback =
     !board.typed && (axis === "epic" || axis === "type")
@@ -68,18 +68,21 @@ export function BoardView({
 
   const header = (
     <View style={compact ? styles.boardHeaderStacked : styles.boardHeader}>
-      <Text style={styles.sectionTitle}>Board</Text>
-      <Text style={styles.sectionMeta} accessibilityLabel={`Board shows ${provenance}`}>
-        {provenance}
-      </Text>
-      <AxisSwitcher
-        styles={styles}
-        axis={board.axis}
-        typed={board.typed}
-        onAxisChange={onAxisChange}
-        hideClosed={hideClosed}
-        onHideClosedChange={onHideClosedChange}
-      />
+      {/* No "Board" title: the view switcher above already says which view this
+          is, and repeating it costs a whole band of vertical space. */}
+      <View style={styles.boardControlRow}>
+        <AxisSwitcher
+          styles={styles}
+          axis={board.axis}
+          typed={board.typed}
+          onAxisChange={onAxisChange}
+          hideClosed={hideClosed}
+          onHideClosedChange={onHideClosedChange}
+        />
+        <Text style={styles.sectionMeta} accessibilityLabel={`Board shows ${provenance}`}>
+          {provenance}
+        </Text>
+      </View>
       {scope === null ? null : <Text style={styles.muted}>{scope}</Text>}
       {axisFallback === null ? null : <Text style={styles.muted}>{axisFallback}</Text>}
       {gap === null ? null : <Text style={styles.danger}>{gap}</Text>}

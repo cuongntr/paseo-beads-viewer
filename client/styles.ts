@@ -23,6 +23,11 @@ export interface PanelStyles {
   readonly actionText: TextStyle;
   readonly banner: ViewStyle;
   readonly summaryBar: ViewStyle;
+  readonly summaryStack: ViewStyle;
+  readonly summaryLine: ViewStyle;
+  readonly summaryRail: ViewStyle;
+  readonly summaryAuthority: TextStyle;
+  readonly summaryProvenance: TextStyle;
   readonly pulseRow: ViewStyle;
   readonly pulseCell: ViewStyle;
   readonly pulseValue: TextStyle;
@@ -30,6 +35,7 @@ export interface PanelStyles {
   readonly workbench: ViewStyle;
   readonly masterPane: ViewStyle;
   readonly masterPaneWide: ViewStyle;
+  readonly masterPaneAlone: ViewStyle;
   readonly detailPaneNarrow: ViewStyle;
   readonly masterHeader: ViewStyle;
   readonly controlStack: ViewStyle;
@@ -111,6 +117,7 @@ export interface PanelStyles {
   readonly boardScroll: ViewStyle;
   readonly boardHeader: ViewStyle;
   readonly boardHeaderStacked: ViewStyle;
+  readonly boardControlRow: ViewStyle;
   readonly boardLaneRow: ViewStyle;
   readonly boardLane: ViewStyle;
   readonly boardLaneStacked: ViewStyle;
@@ -162,18 +169,26 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     actionPressed: { backgroundColor: theme.colors.surface2 },
     actionText: { color: theme.colors.foreground, fontSize: 11, fontWeight: "600" },
     banner: { paddingHorizontal: gutter, paddingTop: 12, gap: 6, maxWidth: DETAIL_MAX_WIDTH },
-    /** Non-compact only: the pulse band between the header and the workbench. */
+    /** Non-compact only: the provenance band between the header and the workbench. */
     summaryBar: {
       paddingHorizontal: gutter,
-      paddingVertical: 14,
-      gap: 12,
+      paddingVertical: 8,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
     },
-    pulseRow: { flexDirection: "row", flexWrap: "wrap", columnGap: compact ? 18 : 32, rowGap: 8 },
-    pulseCell: { minWidth: compact ? 62 : 78, gap: 2 },
-    pulseValue: { color: theme.colors.foreground, fontSize: compact ? 19 : 22, fontWeight: "600" },
-    pulseLabel: { color: theme.colors.foregroundMuted, fontSize: 10 },
+    /**
+     * Provenance and counts are reference material, not the subject of the
+     * panel, so they read as two quiet lines rather than a display band.
+     */
+    summaryStack: { gap: 4 },
+    summaryLine: { flexDirection: "row", alignItems: "center", gap: 8 },
+    summaryRail: { width: 3, alignSelf: "stretch", minHeight: 14, borderRadius: 2 },
+    summaryAuthority: { color: theme.colors.foreground, fontSize: 11, fontWeight: "600" },
+    summaryProvenance: { color: theme.colors.foregroundMuted, fontSize: 11, flexShrink: 1 },
+    pulseRow: { flexDirection: "row", flexWrap: "wrap", columnGap: compact ? 14 : 20, rowGap: 4 },
+    pulseCell: { flexDirection: "row", alignItems: "baseline" },
+    pulseValue: { color: theme.colors.foreground, fontSize: 13, fontWeight: "600" },
+    pulseLabel: { color: theme.colors.foregroundMuted, fontSize: 11 },
     workbench: { flex: 1, flexDirection: "row" },
     /**
      * Operational views put the working list first: 5:4 favours the master pane
@@ -187,12 +202,14 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     },
     /** Board view: the lanes need the width, the inspector stays reachable. */
     masterPaneWide: { flex: 7 },
+    /** With no inspector beside it, the divider would sit on the panel edge. */
+    masterPaneAlone: { borderRightWidth: 0 },
     detailPaneNarrow: { flex: 3 },
     masterHeader: {
       paddingHorizontal: gutter,
-      paddingTop: 14,
-      paddingBottom: 12,
-      gap: 12,
+      paddingTop: 10,
+      paddingBottom: 8,
+      gap: 8,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
     },
@@ -401,17 +418,19 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     boardStack: { gap: 14 },
     boardScroll: { flex: 1 },
     /** Compact reuses the page gutter, so only the vertical rhythm is set here. */
-    boardHeaderStacked: { gap: 4, paddingBottom: 4 },
+    boardHeaderStacked: { gap: 6, paddingBottom: 2 },
     boardHeader: {
       paddingHorizontal: gutter,
-      paddingTop: 14,
-      paddingBottom: 10,
-      gap: 4,
+      paddingTop: 8,
+      paddingBottom: 8,
+      gap: 6,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
     },
+    /** The board's own controls and its scope note share one line. */
+    boardControlRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10 },
     /** Non-compact: fixed-width lanes inside one horizontal scroll region. */
-    boardLaneRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: gutter },
+    boardLaneRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 12 },
     boardLane: {
       width: 236,
       gap: 8,
@@ -429,12 +448,12 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
       letterSpacing: 0.4,
     },
     boardLaneCount: { color: theme.colors.foregroundMuted, fontSize: 10 },
-    boardLaneBody: { gap: 6 },
+    boardLaneBody: { gap: 5 },
     boardCard: {
       flexDirection: "row",
       gap: 10,
       minHeight: hitHeight,
-      paddingVertical: 8,
+      paddingVertical: 6,
       paddingRight: 8,
       paddingLeft: 0,
       borderWidth: 1,
@@ -445,7 +464,7 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     },
     boardCardSelected: { backgroundColor: theme.colors.surface2, borderColor: theme.colors.accent },
     boardCardRail: { width: 3, alignSelf: "stretch" },
-    boardCardBody: { flex: 1, gap: 5 },
+    boardCardBody: { flex: 1, gap: 4 },
     boardCardTitle: { color: theme.colors.foreground, fontSize: 12, lineHeight: 17, fontWeight: "600" },
     statusChip: { flexDirection: "row", alignItems: "center", gap: 4 },
     statusChipText: { color: theme.colors.foreground, fontSize: 10, fontWeight: "600" },
