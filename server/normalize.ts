@@ -235,10 +235,14 @@ export function normalizeTracks(payload: unknown, trackLimit = 8, itemLimit = 10
  * are dropped first: a truncated board should still show everything a person
  * can act on, and `truncated` says so out loud.
  */
-export function normalizeBoardIssues(payload: unknown, limit = BOARD_ISSUE_LIMIT): BoardSnapshot {
+export function normalizeBoardIssues(
+  payload: unknown,
+  facets: TrackerFacets = EMPTY_FACETS,
+  limit = BOARD_ISSUE_LIMIT,
+): BoardSnapshot {
   const adjacency = asRecord(asRecord(payload)?.["adjacency"]);
   const rawNodes = readArray(adjacency, "nodes");
-  if (rawNodes.length === 0) return { issues: [], total: 0, truncated: false };
+  if (rawNodes.length === 0) return { issues: [], typed: facets.ok, total: 0, truncated: false };
 
   const blockedByCounts = new Map<string, number>();
   const unblocksCounts = new Map<string, number>();
@@ -266,6 +270,7 @@ export function normalizeBoardIssues(payload: unknown, limit = BOARD_ISSUE_LIMIT
     if (id === null || seen.has(id)) continue;
     seen.add(id);
     const status = readString(node, "status") ?? "unknown";
+    const facet = facets.byId.get(id);
     const issue: BoardIssue = {
       id,
       title: readString(node, "title") ?? id,
@@ -275,18 +280,78 @@ export function normalizeBoardIssues(payload: unknown, limit = BOARD_ISSUE_LIMIT
       blockedByCount: blockedByCounts.get(id) ?? 0,
       unblocksCount: unblocksCounts.get(id) ?? 0,
       parentId: parents.get(id) ?? null,
+      type: facet?.type ?? null,
+      assignee: facet?.assignee ?? null,
     };
     if (isClosedStatus(status)) closed.push(issue);
     else open.push(issue);
   }
 
   const total = open.length + closed.length;
-  if (total <= limit) return { issues: [...open, ...closed], total, truncated: false };
+  if (total <= limit) {
+    return { issues: [...open, ...closed], typed: facets.ok, total, truncated: false };
+  }
   return {
     issues: [...open, ...closed].slice(0, Math.max(limit, open.length)),
+    typed: facets.ok,
     total,
     truncated: true,
   };
+}
+
+/** Type and assignee for one issue, the two facets the graph does not carry. */
+export interface TrackerFacet {
+  readonly type: string | null;
+  readonly assignee: string | null;
+}
+
+export interface TrackerFacets {
+  /** False when the tracker was absent or rejected the read; the board then has no types. */
+  readonly ok: boolean;
+  readonly byId: ReadonlyMap<string, TrackerFacet>;
+}
+
+export const EMPTY_FACETS: TrackerFacets = { ok: false, byId: new Map() };
+
+/** Bounds on the facet CSV, so a runaway tracker cannot allocate without limit. */
+const FACET_MAX_ROWS = 20_000;
+const FACET_MAX_LINE_LENGTH = 512;
+
+/**
+ * Parses `id,issue_type,assignee` CSV from `br`/`bd list`.
+ *
+ * The plugin chooses those three columns precisely because none of them holds
+ * free text: ids are pattern-bounded, types and assignees are short tokens. A
+ * row that nonetheless contains a quote or the wrong column count is skipped
+ * rather than guessed at, because a mis-split row would mislabel an issue.
+ */
+export function parseTrackerFacets(csv: string): TrackerFacets {
+  const byId = new Map<string, TrackerFacet>();
+  const lines = csv.split(/\r?\n/);
+  let header = false;
+  let rows = 0;
+  for (const line of lines) {
+    if (line.length === 0 || line.length > FACET_MAX_LINE_LENGTH) continue;
+    if (!header) {
+      // Tolerate a tracker that omits the header rather than losing the first row.
+      header = true;
+      if (line.startsWith("id,")) continue;
+    }
+    if (rows >= FACET_MAX_ROWS) break;
+    if (line.includes('"')) continue;
+    const parts = line.split(",");
+    if (parts.length !== 3) continue;
+    const id = parts[0]?.trim() ?? "";
+    if (id.length === 0) continue;
+    const type = parts[1]?.trim() ?? "";
+    const assignee = parts[2]?.trim() ?? "";
+    byId.set(id, {
+      type: type.length === 0 ? null : type.toLowerCase(),
+      assignee: assignee.length === 0 ? null : assignee,
+    });
+    rows += 1;
+  }
+  return { ok: byId.size > 0, byId };
 }
 
 export function normalizePlanSummary(payload: unknown): PlanSummary | null {

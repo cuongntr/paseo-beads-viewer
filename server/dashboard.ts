@@ -2,10 +2,11 @@ import type { RpcInput, RpcOutput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { CommandError, SectionState } from "../shared/beads";
 import { dashboardRpc } from "../shared/rpc";
-import { runBvJson, runBvVersion } from "./bv";
+import { runBvJson, runBvVersion, runTrackerFacets } from "./bv";
 import { ExpiringCache } from "./cache";
 import type { CommandResult } from "./command";
 import {
+  EMPTY_FACETS,
   normalizeAlertSummary,
   normalizeAlerts,
   normalizeBlockers,
@@ -15,7 +16,9 @@ import {
   normalizeRecommendations,
   normalizeSource,
   normalizeTracks,
+  parseTrackerFacets,
   readPayloadError,
+  type TrackerFacets,
 } from "./normalize";
 import { rememberTracker, resolveTrackerFromPayload, type TrackerResolution } from "./tracker";
 import { resolveWorkspaceTarget, UNKNOWN_TRACKER } from "./workspace";
@@ -35,7 +38,7 @@ const OK_SECTION: SectionState = { status: "ok", error: null };
 
 /** No graph read happened, so the board has nothing rather than a guess. */
 function emptyBoard(): DashboardOutput["board"] {
-  return { issues: [], total: 0, truncated: false };
+  return { issues: [], typed: false, total: 0, truncated: false };
 }
 
 function degraded(error: CommandError): SectionState {
@@ -190,6 +193,15 @@ export async function getDashboard(
   const tracker = trackerResolution.state;
   if (tracker.kind !== null) rememberTracker(input.workspaceId, directory, trackerResolution);
 
+  // The graph carries no type or assignee, so the board's epic and type axes
+  // depend on this overlay. A tracker that is absent or rejects the flags costs
+  // those two axes and nothing else; it never fails the dashboard.
+  let facets: TrackerFacets = EMPTY_FACETS;
+  if (trackerResolution.route !== null && graphPayload !== null) {
+    const csv = await runTrackerFacets(trackerResolution.route, directory);
+    if (csv.ok) facets = parseTrackerFacets(csv.value);
+  }
+
   const triageSection = classification.triage;
 
   const output: DashboardOutput = {
@@ -202,7 +214,7 @@ export async function getDashboard(
     counts: normalizeCounts(triagePayload),
     recommendations: normalizeRecommendations(triagePayload),
     blockers: normalizeBlockers(triagePayload),
-    board: normalizeBoardIssues(graphPayload),
+    board: normalizeBoardIssues(graphPayload, facets),
     tracks: normalizeTracks(planPayload),
     planSummary: normalizePlanSummary(planPayload),
     alerts: normalizeAlerts(alertsPayload),

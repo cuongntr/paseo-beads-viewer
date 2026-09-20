@@ -14,6 +14,7 @@ import { dashboardRpc } from "../shared/rpc";
 import { classifyProject } from "../server/dashboard";
 import {
   buildIssueSnapshot,
+  EMPTY_FACETS,
   normalizeAlertSummary,
   normalizeAlerts,
   normalizeBlockers,
@@ -25,12 +26,14 @@ import {
   normalizeSearchResults,
   normalizeSource,
   normalizeTracks,
+  parseTrackerFacets,
   readPayloadError,
 } from "../server/normalize";
 import {
   alertsPayload,
   bdShowPayload,
   brShowPayload,
+  facetsCsv,
   graphPayload,
   missingProjectPayload,
   planPayload,
@@ -356,21 +359,26 @@ describe("board issues from the dependency graph", () => {
   });
 
   it("keeps open work and drops closed issues first when the cap bites", () => {
-    const board = normalizeBoardIssues(graphPayload, 3);
+    const board = normalizeBoardIssues(graphPayload, EMPTY_FACETS, 3);
     expect(board.total).toBe(5);
     expect(board.truncated).toBe(true);
     expect(board.issues.map((entry) => entry.id)).toEqual(["pib-cyhm", "pib-x1q9", "pib-blk1"]);
   });
 
   it("never drops an open issue, even below the requested cap", () => {
-    const board = normalizeBoardIssues(graphPayload, 1);
+    const board = normalizeBoardIssues(graphPayload, EMPTY_FACETS, 1);
     expect(board.issues.filter((entry) => entry.status !== "closed")).toHaveLength(3);
     expect(board.truncated).toBe(true);
   });
 
   it("reports an empty board for a payload with no graph rather than throwing", () => {
     for (const payload of [null, {}, { adjacency: {} }, { adjacency: { nodes: [] } }]) {
-      expect(normalizeBoardIssues(payload)).toEqual({ issues: [], total: 0, truncated: false });
+      expect(normalizeBoardIssues(payload)).toEqual({
+        issues: [],
+        typed: false,
+        total: 0,
+        truncated: false,
+      });
     }
   });
 
@@ -388,6 +396,59 @@ describe("board issues from the dependency graph", () => {
   });
 });
 
+describe("tracker facet overlay", () => {
+  it("reads id, type and assignee, lowercasing the type and emptying blanks", () => {
+    const facets = parseTrackerFacets(facetsCsv);
+    expect(facets.ok).toBe(true);
+    expect(facets.byId.get("pib-cyhm")).toEqual({ type: "task", assignee: "ada" });
+    expect(facets.byId.get("pib-x1q9")).toEqual({ type: "epic", assignee: null });
+    expect(facets.byId.get("pib-blk1")?.assignee).toBe("grace");
+  });
+
+  it("applies the overlay onto the graph issues", () => {
+    const board = normalizeBoardIssues(graphPayload, parseTrackerFacets(facetsCsv));
+    expect(board.typed).toBe(true);
+    const byId = new Map(board.issues.map((entry) => [entry.id, entry]));
+    expect(byId.get("pib-x1q9")?.type).toBe("epic");
+    expect(byId.get("pib-cyhm")?.assignee).toBe("ada");
+    // The overlay must not disturb anything the graph owns.
+    expect(byId.get("pib-x1q9")?.status).toBe("in_progress");
+    expect(byId.get("pib-x1q9")?.unblocksCount).toBe(2);
+  });
+
+  it("leaves issues untyped when the tracker gave nothing", () => {
+    const board = normalizeBoardIssues(graphPayload);
+    expect(board.typed).toBe(false);
+    expect(board.issues.every((entry) => entry.type === null && entry.assignee === null)).toBe(true);
+  });
+
+  it("skips malformed rows rather than mislabelling an issue", () => {
+    const facets = parseTrackerFacets(
+      [
+        "id,issue_type,assignee",
+        "good-1,task,ada",
+        "too,many,columns,here",
+        "short-row",
+        ',quoted,"row"',
+        "  ,task,ada",
+        `long-${"x".repeat(600)},task,`,
+      ].join("\n"),
+    );
+    expect([...facets.byId.keys()]).toEqual(["good-1"]);
+  });
+
+  it("keeps the first row when the tracker omits the header", () => {
+    const facets = parseTrackerFacets("a-1,epic,ada\na-2,task,");
+    expect(facets.byId.get("a-1")).toEqual({ type: "epic", assignee: "ada" });
+    expect(facets.byId.size).toBe(2);
+  });
+
+  it("reports an empty overlay rather than claiming success on empty output", () => {
+    expect(parseTrackerFacets("").ok).toBe(false);
+    expect(parseTrackerFacets("id,issue_type,assignee").ok).toBe(false);
+  });
+});
+
 describe("dashboard contract", () => {
   it("validates a fully degraded dashboard payload", () => {
     const error = { code: "unavailable" as const, message: "bv was not found", exitCode: null };
@@ -401,7 +462,7 @@ describe("dashboard contract", () => {
       counts: null,
       recommendations: [],
       blockers: [],
-      board: { issues: [], total: 0, truncated: false },
+      board: { issues: [], typed: false, total: 0, truncated: false },
       tracks: [],
       planSummary: null,
       alerts: [],
@@ -429,7 +490,7 @@ describe("dashboard contract", () => {
       counts: normalizeCounts(triagePayload),
       recommendations: normalizeRecommendations(triagePayload),
       blockers: normalizeBlockers(triagePayload),
-      board: normalizeBoardIssues(graphPayload),
+      board: normalizeBoardIssues(graphPayload, parseTrackerFacets(facetsCsv)),
       tracks: normalizeTracks(planPayload),
       planSummary: normalizePlanSummary(planPayload),
       alerts: normalizeAlerts(alertsPayload),

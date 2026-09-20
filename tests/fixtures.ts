@@ -144,6 +144,16 @@ export const graphPayload = {
   },
 } as const;
 
+/** `br list --status all --fields id,issue_type,assignee --format csv`. */
+export const facetsCsv = [
+  "id,issue_type,assignee",
+  "pib-cyhm,task,ada",
+  "pib-x1q9,epic,",
+  "pib-blk1,bug,grace",
+  "pib-old1,epic,",
+  "pib-old2,task,",
+].join("\n");
+
 export const alertsPayload = {
   generated_at: "2026-09-17T23:52:19Z",
   version: "v0.25.0",

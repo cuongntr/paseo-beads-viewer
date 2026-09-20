@@ -143,8 +143,52 @@ export function trackerShowInvocation(route: TrackerRoute, issueId: string) {
 }
 
 /**
- * The only tracker invocation the plugin performs: a read-only detail read.
- * `--` separates the id so an id can never be read as a flag.
+ * The issue facets `bv --robot-graph` does not carry: type and assignee. CSV
+ * with an explicit `--fields` list is the only compact shape the trackers
+ * offer; their JSON form embeds every description and measured 2.5 MB for the
+ * same 778 issues this returns in 24 KB. The argv is literal and takes no user
+ * input, and the selected columns hold no free text, so no quoted field or
+ * embedded newline can appear.
+ */
+export function trackerFacetsInvocation(route: TrackerRoute) {
+  const safetyArgs = route.kind === "br" ? ["--no-auto-import", "--no-auto-flush"] : [];
+  return {
+    args: [
+      "--db",
+      route.database,
+      ...safetyArgs,
+      "list",
+      "--status",
+      "all",
+      "--fields",
+      "id,issue_type,assignee",
+      "--format",
+      "csv",
+    ],
+    env: {
+      BEADS_DIR: route.beadsDirectory,
+      BEADS_DB: route.database,
+      BEADS_JSONL: null,
+      BD_DB: route.database,
+    },
+  } as const;
+}
+
+/** Runs the facet read. A tracker that rejects these flags degrades to no overlay. */
+export async function runTrackerFacets(route: TrackerRoute, cwd: string): Promise<CommandResult<string>> {
+  const invocation = trackerFacetsInvocation(route);
+  return await runTextCommand({
+    label: `${route.kind} list --format csv`,
+    executableName: route.kind,
+    args: invocation.args,
+    cwd,
+    env: invocation.env,
+  });
+}
+
+/**
+ * The only tracker invocation the plugin performs for one issue: a read-only
+ * detail read. `--` separates the id so an id can never be read as a flag.
  */
 export async function runTrackerShow<Value>(
   route: TrackerRoute,

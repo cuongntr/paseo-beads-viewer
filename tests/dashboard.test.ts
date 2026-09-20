@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { CommandResult } from "../server/command";
-import { alertsPayload, graphPayload, missingProjectPayload, planPayload, triagePayload } from "./fixtures";
+import {
+  alertsPayload,
+  facetsCsv,
+  graphPayload,
+  missingProjectPayload,
+  planPayload,
+  triagePayload,
+} from "./fixtures";
 
 /**
  * The dashboard handler is exercised without a Beads repository: `bv` is mocked
@@ -12,11 +19,13 @@ import { alertsPayload, graphPayload, missingProjectPayload, planPayload, triage
  */
 const runBvVersion = vi.fn<(cwd: string) => Promise<CommandResult<string>>>();
 const runBvJson = vi.fn();
+const runTrackerFacets = vi.fn<() => Promise<CommandResult<string>>>();
 
 vi.mock("../server/bv", () => ({
   runBvVersion: (cwd: string) => runBvVersion(cwd),
   runBvJson: (command: string, cwd: string, parse: (payload: unknown) => unknown) =>
     runBvJson(command, cwd, parse),
+  runTrackerFacets: () => runTrackerFacets(),
 }));
 
 // The tracker CLI lookup must not depend on what is installed on this machine.
@@ -71,7 +80,9 @@ beforeEach(() => {
   clearDashboardCache();
   runBvVersion.mockReset();
   runBvJson.mockReset();
+  runTrackerFacets.mockReset();
   runBvVersion.mockResolvedValue(ok("bv v0.25.0"));
+  runTrackerFacets.mockResolvedValue(ok(facetsCsv));
 });
 
 describe("dashboard assembly", () => {
@@ -113,6 +124,22 @@ describe("dashboard assembly", () => {
     const byId = new Map(result.board.issues.map((entry) => [entry.id, entry]));
     expect(byId.get("pib-x1q9")?.unblocksCount).toBe(2);
     expect(byId.get("pib-blk1")?.blockedByCount).toBe(1);
+    // …and these two can only come from the tracker overlay.
+    expect(result.board.typed).toBe(true);
+    expect(byId.get("pib-x1q9")?.type).toBe("epic");
+    expect(byId.get("pib-cyhm")?.assignee).toBe("ada");
+  });
+
+  it("keeps the board usable but untyped when the tracker rejects the facet read", async () => {
+    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
+    runTrackerFacets.mockResolvedValue(err("exit", "br list failed: unknown flag --fields", 2));
+    const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
+
+    // Losing the overlay costs the epic and type axes, nothing else.
+    expect(result.sections.graph.status).toBe("ok");
+    expect(result.board.total).toBe(5);
+    expect(result.board.typed).toBe(false);
+    expect(result.board.issues.every((entry) => entry.type === null)).toBe(true);
   });
 
   it("empties the board and marks the graph section when only the graph read fails", async () => {
@@ -131,7 +158,7 @@ describe("dashboard assembly", () => {
       status: "unavailable",
       error: { code: "timeout", message: "bv --robot-graph timed out.", exitCode: null },
     });
-    expect(result.board).toEqual({ issues: [], total: 0, truncated: false });
+    expect(result.board).toEqual({ issues: [], typed: false, total: 0, truncated: false });
   });
 
   it("keeps triage usable when plan and alerts are unavailable", async () => {

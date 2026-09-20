@@ -130,12 +130,19 @@ export const BoardIssueSchema = z.object({
   labels: z.array(z.string()),
   blockedByCount: z.number(),
   unblocksCount: z.number(),
+  /** Parent issue id. The graph emits `parent-child` as child → parent. */
   parentId: z.string().nullable(),
+  /** `epic`, `task`, `bug`, … from the tracker; null when the overlay is absent. */
+  type: z.string().nullable(),
+  /** From the tracker overlay; null when unassigned or the overlay is absent. */
+  assignee: z.string().nullable(),
 });
 export type BoardIssue = z.output<typeof BoardIssueSchema>;
 
 export const BoardSnapshotSchema = z.object({
   issues: z.array(BoardIssueSchema),
+  /** True when the tracker supplied the type/assignee overlay for these issues. */
+  typed: z.boolean(),
   /** Issue count `bv` reported before any cap was applied. */
   total: z.number(),
   /** True when {@link BOARD_ISSUE_LIMIT} dropped closed issues from `issues`. */
@@ -151,6 +158,12 @@ export type BoardSnapshot = z.output<typeof BoardSnapshotSchema>;
  * output cap would allow.
  */
 export const BOARD_ISSUE_LIMIT = 2000;
+
+/** Issue types that own other issues, so they can head a group. */
+export const CONTAINER_TYPES: readonly string[] = ["epic", "feature", "milestone", "story"];
+
+/** Label prefix the board groups by on its feature axis. */
+export const FEATURE_LABEL_PREFIX = "feature:";
 
 /** Status spellings every known tracker uses for finished work. */
 export const CLOSED_STATUSES: readonly string[] = [

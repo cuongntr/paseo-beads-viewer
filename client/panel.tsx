@@ -17,7 +17,7 @@ import {
   takeDashboardRefresh,
   takeIssueFocus,
 } from "./focus";
-import { buildBoard, type BoardModel } from "./board";
+import { buildBoard, type BoardAxis, type BoardModel } from "./board";
 import { BoardView } from "./board-view";
 import { authorityLabel, authorityTone, errorLabel, relativeAge, shortHash, toneColor } from "./format";
 import {
@@ -74,6 +74,11 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   const [queryText, setQueryText] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState<SubmittedQuery>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("next");
+  // The board's own controls: which axis groups it, and whether finished work
+  // is shown. Live-only is on by default because a mature project buries its
+  // live issues under closed ones.
+  const [boardAxis, setBoardAxis] = useState<BoardAxis>("epic");
+  const [hideClosed, setHideClosed] = useState(true);
 
   // Slash commands and Command Center actions may target the panel before it mounts.
   const focusRevision = useSyncExternalStore(subscribeIssueFocus, issueFocusRevision, issueFocusRevision);
@@ -173,7 +178,10 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   }, [dashboard.isPending, data, workspaceName, workspaceId]);
 
   // Derived above every early return so hook order stays stable across states.
-  const boardModel = useMemo(() => boardFor(data), [data]);
+  const boardModel = useMemo(
+    () => boardFor(data, boardAxis, hideClosed),
+    [data, boardAxis, hideClosed],
+  );
   const boardMissingSources = useMemo(() => boardGaps(data), [data]);
   const boardActive = submittedQuery === null && viewMode === "board";
 
@@ -327,6 +335,10 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       board={boardModel}
       compact={layout.compact}
       missingSources={boardMissingSources}
+      axis={boardAxis}
+      onAxisChange={setBoardAxis}
+      hideClosed={hideClosed}
+      onHideClosedChange={setHideClosed}
       selectedId={selectedId}
       onSelect={setSelectedId}
     />
@@ -516,10 +528,13 @@ function viewSpecs(data: DashboardResult | null, board: BoardModel): readonly Vi
 const EMPTY_BOARD_INPUT = {
   graphAvailable: false,
   issues: [],
+  typed: false,
   total: 0,
   truncated: false,
   recommendations: [],
   tracks: [],
+  axis: "epic",
+  hideClosed: true,
 } as const;
 
 /**
@@ -527,12 +542,15 @@ const EMPTY_BOARD_INPUT = {
  * and track membership. A degraded section contributes nothing rather than an
  * invented lane.
  */
-function boardFor(data: DashboardResult | null): BoardModel {
-  if (data === null) return buildBoard(EMPTY_BOARD_INPUT);
+function boardFor(data: DashboardResult | null, axis: BoardAxis, hideClosed: boolean): BoardModel {
+  if (data === null) return buildBoard({ ...EMPTY_BOARD_INPUT, axis, hideClosed });
   const graphOk = data.sections.graph.status === "ok";
   return buildBoard({
+    axis,
+    hideClosed,
     graphAvailable: graphOk,
     issues: graphOk ? data.board.issues : [],
+    typed: graphOk && data.board.typed,
     total: graphOk ? data.board.total : 0,
     truncated: graphOk && data.board.truncated,
     recommendations: data.sections.triage.status === "ok" ? data.recommendations : [],

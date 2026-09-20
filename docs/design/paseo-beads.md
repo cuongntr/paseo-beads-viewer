@@ -26,7 +26,7 @@ client/ (Paseo app, React Native)      shared/ (both)              server/ (daem
 ─────────────────────────────────      ──────────────────          ───────────────────────────
 panel.tsx        TanStack Query UI     beads.ts  Zod types         dashboard.ts  triage+plan+alerts
 rows.tsx         priority-rail rows    rpc.ts    RPC contracts     search.ts     robot-search
-board.ts         status-lane grouping            attachment source issue.ts      tracker show
+board.ts         axis grouping model             attachment source issue.ts      tracker show/list
 board-view.tsx   read-only board                                  attachments.ts workspace fanout
 markdown.ts      bounded md parser                                tracker.ts    br vs bd identity
 markdown-view.tsx md renderer
@@ -137,24 +137,37 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   place.
 - **Search is always reachable** from the master pane. Submitting a query temporarily replaces the
   list with search results and shows an explicit back control returning to the active view.
-- **The `Board` view is the whole project, read-only.** Cards come from `bv --robot-graph`, the one
-  `bv` read that returns every issue rather than an analysis-selected subset, so in-progress,
-  blocked, open and closed work all have a lane. Triage picks and plan tracks are folded in only as
-  *enrichment* — assignee, type, track membership, and the triage-pick flag — never as the source of
-  which issues exist; an id known only to triage never becomes a card. Dependency counts come from
-  the graph's `blocks` edges, where `from` is blocked by `to`. The header states the scope in place:
-  `<surfaced> of <total> issues · whole project · read-only`. When the graph read fails the board
-  falls back to the old triage+plan working set, relabels itself `bv working set`, and names the
-  missing source rather than passing a subset off as the project. Lanes are discovered from the raw
-  statuses (preserved verbatim) and ordered in-progress, blocked, ready/open, unknown
-  alphabetically, closed/done last; cards order by priority then title then id. A mature project has
-  far more closed issues than live ones, so closed lanes start collapsed behind their count and
-  expand on press, and every lane renders at most `BOARD_LANE_CARD_LIMIT` (60) cards with the
-  remainder reported as `+N more`. The payload itself is bounded at `BOARD_ISSUE_LIMIT` (2000)
-  issues, dropping closed issues first so open work is never the part that goes missing (which closed issues survive is unordered, and the header does not claim otherwise); the header
-  says so when that happens. Non-compact renders fixed-width horizontally scrollable lanes; compact
-  stacks full-width lane sections instead of unreadable narrow columns. Clicking a card selects the
-  issue in the existing inspector. There is no drag, drop, or mutation control.
+- **The `Board` view is the whole project, read-only, grouped on a chosen axis.** Issues come from
+  `bv --robot-graph`, the one `bv` read that returns every issue rather than an analysis-selected
+  subset. Type and assignee come from one extra read, `<tracker> list --fields
+  id,issue_type,assignee --format csv`, because the graph carries neither; the tracker's JSON form
+  was rejected as the source since it embeds every description and measured 2.5 MB against the
+  24 KB of that CSV. Triage picks and plan tracks stay pure enrichment — track membership and the
+  triage-pick flag — and never decide which issues exist.
+- **Grouping is the feature, not decoration.** Measured on a real 776-issue project: 620 issues
+  have a parent, 432 of those pairs are task→epic, bugs sit outside the tree (4 of 34 parented),
+  734 issues carry exactly one `feature:` label, and only 38 issues are not closed. So the board
+  offers four axes — `epic` (walks the parent chain to the outermost container type, so a task
+  under a sub-epic still lands under the epic a reader thinks in), `feature` (the `feature:` label,
+  and an issue carrying two genuinely appears under both), `type`, and `status` — with a **Live
+  only** filter on by default. Group headers show `done/size` computed over the whole group, so the
+  filter never distorts progress. Groups with nothing live start collapsed; catch-all groups (`No
+  epic`, `Loose bugs`, `No feature`, `No type`) rank last so a real group always leads. `epic` and
+  `type` require the tracker overlay: without it the axes are visibly disabled and the board falls
+  back to `status` rather than piling everything into one unnamed group.
+- **Edge direction is data, not intuition.** `bv --robot-graph` emits `blocks` as `from` → `to`
+  meaning from-is-blocked-by-to, but `parent-child` as child → parent. Both were established by
+  cross-checking `br show --json` on real repositories, after reading them the same way produced a
+  tree that disagreed with the repository's own dotted-id convention on 620 of 620 edges.
+  `discovered-from` and `related` are ignored: neither implies containment or ordering.
+- **The board bounds itself out loud.** `BOARD_ISSUE_LIMIT` (2000, ~480 KB at a measured 241 B per
+  issue) drops closed issues first so open work is never the part that goes missing;
+  `BOARD_LANE_CARD_LIMIT` (60) caps cards per group and reports the remainder as `+N more`; the
+  header states the truncation without claiming an ordering the data does not carry. Only the
+  status axis renders as horizontally scrolling columns — epics, features and types are lists of
+  wildly unequal size, so they stack as full-width sections. Compact stacks everything. Clicking a
+  card selects the issue in the existing inspector; an epic heading its own group is reachable
+  through its id. There is no drag, drop, or mutation control.
 - **Priority owns the colour channel.** Every issue row and board card is a 3 px rail coloured by
   priority (P0 danger, P1 warning, P2 accent, lower or absent neutral, all from `theme.colors`).
   Status is never colour-coded: it is a Lucide `Icon` plus its text, so an unknown status from a
@@ -196,8 +209,9 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
 
 - Workspace panel at `workspace` and `explorer` locations, with refresh.
 - Overview counts, authority/freshness state, triage picks, execution tracks, blockers, alerts.
-- A read-only whole-project `Board` view grouped by issue status, sourced from `bv --robot-graph`
-  and enriched by triage picks and plan tracks, with collapsed closed lanes and bounded payload.
+- A read-only whole-project `Board` view with epic/feature/type/status grouping and a live-only
+  filter, sourced from `bv --robot-graph` plus the tracker's type/assignee CSV, with collapsed
+  settled groups and a bounded payload.
 - Bounded issue search and selectable issue detail, with issue prose and comments rendered through
   the bounded Markdown subset.
 - Composer attachment source for Beads issues across recent workspaces.
