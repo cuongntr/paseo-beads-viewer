@@ -18,8 +18,8 @@ import {
   takeIssueFocus,
 } from "./focus";
 import { buildBoard, type BoardAxis, type BoardModel } from "./board";
-import { BoardView } from "./board-view";
-import { authorityLabel, authorityTone, errorLabel, relativeAge, shortHash, toneColor } from "./format";
+import { BoardAxisControls, BoardView } from "./board-view";
+import { authorityLabel, authorityTone, errorLabel, relativeAge, toneColor } from "./format";
 import {
   AlertRow,
   BlockerRow,
@@ -165,18 +165,6 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   const authority = data?.source?.authority ?? null;
   const railTone = data === null ? "neutral" : data.tool.available ? authorityTone(authority) : "danger";
 
-  const headerSubtitle = useMemo(() => {
-    if (dashboard.isPending) return "Reading bv analysis…";
-    if (data === null) return workspaceName ?? workspaceId;
-    const parts = [
-      workspaceName ?? workspaceId,
-      data.tool.version,
-      data.tracker.kind === null ? "tracker unknown" : `tracker ${data.tracker.kind}`,
-      data.cached ? "cached" : null,
-    ].filter((part): part is string => part !== null && part.length > 0);
-    return parts.join("  ·  ");
-  }, [dashboard.isPending, data, workspaceName, workspaceId]);
-
   // Derived above every early return so hook order stays stable across states.
   const boardModel = useMemo(
     () => boardFor(data, boardAxis, hideClosed),
@@ -189,24 +177,84 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   const activeViewLabel = views.find((view) => view.mode === viewMode)?.label ?? "Next up";
   const searchActive = submittedQuery !== null;
 
+  // One status line instead of a title, a provenance block and a counts band.
+  // The workspace tab already says "Beads", so printing it again buys nothing.
+  const statusLine = useMemo(() => {
+    if (dashboard.isPending) return "Reading bv analysis…";
+    if (data === null) return workspaceName ?? workspaceId;
+    const authority = data.source?.authority ?? null;
+    const counts = data.counts;
+    return [
+      workspaceName ?? workspaceId,
+      data.tool.version,
+      authorityLabel(authority),
+      data.source?.sourceKind ?? null,
+      relativeAge(data.source?.generatedAt ?? null),
+      data.cached ? "cached" : null,
+      counts === null ? null : `${counts.open} open`,
+      counts === null ? null : `${counts.actionable} ready`,
+      counts === null ? null : `${counts.blocked} blocked`,
+      counts === null ? null : `${counts.inProgress} active`,
+      counts === null ? null : `${counts.total} tracked`,
+    ]
+      .filter((part): part is string => part !== null && part.length > 0)
+      .join("  ·  ");
+  }, [dashboard.isPending, data, workspaceName, workspaceId]);
+
+  const refreshButton = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Refresh Beads analysis"
+      accessibilityState={{ busy: dashboard.isFetching }}
+      onPress={refresh}
+      style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
+    >
+      <Text style={styles.actionText}>{dashboard.isFetching ? "Reading…" : "Refresh"}</Text>
+    </Pressable>
+  );
+
+  /** The panel's only chrome: one control row over one status line. */
   const header = (
     <View style={styles.topBar}>
-      <View style={styles.headerRow}>
+      <View style={styles.toolbarRow}>
         <View style={[styles.rail, { backgroundColor: toneColor(theme, railTone) }]} />
-        <View style={styles.headerText}>
-          <Text style={styles.title}>Beads</Text>
-          <Text style={styles.subtitle}>{headerSubtitle}</Text>
+        <ViewSwitcher styles={styles} views={views} viewMode={viewMode} onSelect={setViewMode} />
+        {!boardActive ? null : (
+          <BoardAxisControls
+            styles={styles}
+            axis={boardModel.axis}
+            typed={boardModel.typed}
+            onAxisChange={setBoardAxis}
+            hideClosed={hideClosed}
+            onHideClosedChange={setHideClosed}
+          />
+        )}
+        <View style={styles.searchRow}>
+          <TextInput
+            accessibilityLabel="Search Beads issues"
+            placeholder="Search issues"
+            placeholderTextColor={theme.colors.foregroundMuted}
+            value={queryText}
+            onChangeText={setQueryText}
+            onSubmitEditing={submitSearch}
+            maxLength={SEARCH_QUERY_MAX_LENGTH}
+            returnKeyType="search"
+            style={styles.input}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Run Beads search"
+            onPress={submitSearch}
+            style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
+          >
+            <Text style={styles.actionText}>Search</Text>
+          </Pressable>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Refresh Beads analysis"
-          accessibilityState={{ busy: dashboard.isFetching }}
-          onPress={refresh}
-          style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
-        >
-          <Text style={styles.actionText}>{dashboard.isFetching ? "Reading…" : "Refresh"}</Text>
-        </Pressable>
+        {refreshButton}
       </View>
+      <Text style={styles.subtitle} numberOfLines={layout.compact ? 2 : 1}>
+        {statusLine}
+      </Text>
     </View>
   );
 
@@ -285,48 +333,19 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
     );
   }
 
-  const summary = <ProjectSummary styles={styles} theme={theme} data={data} />;
-
-  const masterControls = (
-    <>
-      <View style={styles.searchRow}>
-        <TextInput
-          accessibilityLabel="Search Beads issues"
-          placeholder="Search issues"
-          placeholderTextColor={theme.colors.foregroundMuted}
-          value={queryText}
-          onChangeText={setQueryText}
-          onSubmitEditing={submitSearch}
-          maxLength={SEARCH_QUERY_MAX_LENGTH}
-          returnKeyType="search"
-          style={styles.input}
-        />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Run Beads search"
-          onPress={submitSearch}
-          style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
-        >
-          <Text style={styles.actionText}>Search</Text>
-        </Pressable>
-      </View>
-      {searchActive ? (
-        <View style={styles.backRow}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Leave search results and return to ${activeViewLabel}`}
-            onPress={exitSearch}
-            style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
-          >
-            <Text style={styles.actionText}>← {activeViewLabel}</Text>
-          </Pressable>
-          <Text style={styles.muted}>Search results for “{submittedQuery}”</Text>
-        </View>
-      ) : (
-        <ViewSwitcher styles={styles} views={views} viewMode={viewMode} onSelect={setViewMode} />
-      )}
-    </>
-  );
+  const searchNotice = searchActive ? (
+    <View style={styles.backRow}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Leave search results and return to ${activeViewLabel}`}
+        onPress={exitSearch}
+        style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
+      >
+        <Text style={styles.actionText}>← {activeViewLabel}</Text>
+      </Pressable>
+      <Text style={styles.muted}>Search results for “{submittedQuery}”</Text>
+    </View>
+  ) : null;
 
   const board = (
     <BoardView
@@ -336,9 +355,6 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       compact={layout.compact}
       missingSources={boardMissingSources}
       axis={boardAxis}
-      onAxisChange={setBoardAxis}
-      hideClosed={hideClosed}
-      onHideClosedChange={setHideClosed}
       selectedId={selectedId}
       onSelect={setSelectedId}
     />
@@ -384,9 +400,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
           }}
           scrollEventThrottle={16}
         >
-          {summary}
-          <View style={styles.divider} />
-          <View style={styles.controlStack}>{masterControls}</View>
+          {searchNotice}
           {boardActive ? board : masterList}
         </ScrollView>
       </View>
@@ -397,7 +411,6 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
     <View style={styles.screen}>
       {header}
       {requestFailure}
-      <View style={styles.summaryBar}>{summary}</View>
       <View style={styles.workbench}>
         {/* Board view needs the width; operational views favour the working list 5:4. */}
         <View
@@ -407,7 +420,6 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
             selectedId === null ? styles.masterPaneAlone : null,
           ]}
         >
-          <View style={styles.masterHeader}>{masterControls}</View>
           {boardActive ? (
             board
           ) : (
@@ -416,6 +428,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
               style={styles.paneScroll}
               contentContainerStyle={styles.paneContent}
             >
+              {searchNotice}
               {masterList}
             </ScrollView>
           )}
@@ -608,55 +621,6 @@ function ViewSwitcher({
           </Pressable>
         );
       })}
-    </View>
-  );
-}
-
-function ProjectSummary({
-  styles,
-  theme,
-  data,
-}: {
-  styles: PanelStyles;
-  theme: PluginWorkspacePanelProps["theme"];
-  data: DashboardResult;
-}) {
-  const authority = data.source?.authority ?? null;
-  const counts = data.counts;
-  // The authority label heads the row, so repeating it inside the provenance
-  // would print the same three words twice.
-  const provenance = [
-    data.source?.sourceKind ?? null,
-    shortHash(data.source?.dataHash ?? null) === null ? null : `hash ${shortHash(data.source?.dataHash ?? null)}`,
-    relativeAge(data.source?.generatedAt ?? null),
-    authority === null ? null : `${authority.visible} visible`,
-    authority === null || authority.tombstones === 0 ? null : `${authority.tombstones} tombstones`,
-  ]
-    .filter((part): part is string => part !== null)
-    .join("  ·  ");
-  const warning = authority?.warnings[0] ?? null;
-
-  return (
-    <View style={styles.summaryStack}>
-      <View style={styles.summaryLine}>
-        <View style={[styles.summaryRail, { backgroundColor: toneColor(theme, authorityTone(authority)) }]} />
-        <Text style={styles.summaryAuthority}>{authorityLabel(authority)}</Text>
-        <Text style={styles.summaryProvenance} numberOfLines={1}>
-          {provenance}
-        </Text>
-      </View>
-      {counts === null ? (
-        <Text style={styles.muted}>bv returned no counts for this project.</Text>
-      ) : (
-        <View style={styles.pulseRow}>
-          <Pulse styles={styles} label="open" value={counts.open} />
-          <Pulse styles={styles} label="ready" value={counts.actionable} />
-          <Pulse styles={styles} label="blocked" value={counts.blocked} />
-          <Pulse styles={styles} label="active" value={counts.inProgress} />
-          <Pulse styles={styles} label="tracked" value={counts.total} />
-        </View>
-      )}
-      {warning === null ? null : <Text style={styles.muted}>{warning}</Text>}
     </View>
   );
 }
@@ -871,19 +835,3 @@ function IssueInspectorBody({
   return <IssueDetailView styles={styles} theme={theme} issue={issue.data.issue} />;
 }
 
-function Pulse({
-  styles,
-  label,
-  value,
-}: {
-  styles: PanelStyles;
-  label: string;
-  value: number;
-}) {
-  return (
-    <View style={styles.pulseCell} accessibilityLabel={`${value} ${label}`}>
-      <Text style={styles.pulseValue}>{value}</Text>
-      <Text style={styles.pulseLabel}> {label}</Text>
-    </View>
-  );
-}

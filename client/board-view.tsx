@@ -25,9 +25,6 @@ export function BoardView({
   selectedId,
   onSelect,
   axis,
-  onAxisChange,
-  hideClosed,
-  onHideClosedChange,
 }: {
   readonly styles: PanelStyles;
   readonly theme: PluginTheme;
@@ -37,10 +34,8 @@ export function BoardView({
   readonly missingSources: readonly string[];
   readonly selectedId: string | null;
   readonly onSelect: (issueId: string) => void;
+  /** The axis the reader asked for, which the model may have overridden. */
   readonly axis: BoardAxis;
-  readonly onAxisChange: (axis: BoardAxis) => void;
-  readonly hideClosed: boolean;
-  readonly onHideClosedChange: (hideClosed: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState<readonly string[]>([]);
   const toggleGroup = (key: string) =>
@@ -48,9 +43,6 @@ export function BoardView({
       current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key],
     );
 
-  const provenance = board.complete
-    ? `${board.live} live of ${board.total}  ·  read-only`
-    : `${board.surfaced} surfaced  ·  working set  ·  read-only`;
   const scope = board.complete
     ? board.truncated
       ? "Every open issue is here; some closed issues were left out to bound the payload. Search still reaches them."
@@ -66,28 +58,16 @@ export function BoardView({
       ? null
       : `${missingSources.join(" and ")} unavailable, so those issues are missing from this board.`;
 
-  const header = (
-    <View style={compact ? styles.boardHeaderStacked : styles.boardHeader}>
-      {/* No "Board" title: the view switcher above already says which view this
-          is, and repeating it costs a whole band of vertical space. */}
-      <View style={styles.boardControlRow}>
-        <AxisSwitcher
-          styles={styles}
-          axis={board.axis}
-          typed={board.typed}
-          onAxisChange={onAxisChange}
-          hideClosed={hideClosed}
-          onHideClosedChange={onHideClosedChange}
-        />
-        <Text style={styles.sectionMeta} accessibilityLabel={`Board shows ${provenance}`}>
-          {provenance}
-        </Text>
+  // No header band: the axis controls live in the panel's single toolbar, and
+  // the counts are already on its status line. Only a caveat earns a line here.
+  const header =
+    scope === null && axisFallback === null && gap === null ? null : (
+      <View style={compact ? styles.boardHeaderStacked : styles.boardHeader}>
+        {scope === null ? null : <Text style={styles.muted}>{scope}</Text>}
+        {axisFallback === null ? null : <Text style={styles.muted}>{axisFallback}</Text>}
+        {gap === null ? null : <Text style={styles.danger}>{gap}</Text>}
       </View>
-      {scope === null ? null : <Text style={styles.muted}>{scope}</Text>}
-      {axisFallback === null ? null : <Text style={styles.muted}>{axisFallback}</Text>}
-      {gap === null ? null : <Text style={styles.danger}>{gap}</Text>}
-    </View>
-  );
+    );
 
   if (board.groups.length === 0) {
     return (
@@ -215,7 +195,7 @@ const AXIS_LABELS: Readonly<Record<BoardAxis, string>> = {
   status: "Status",
 };
 
-function AxisSwitcher({
+export function BoardAxisControls({
   styles,
   axis,
   typed,

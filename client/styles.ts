@@ -13,7 +13,7 @@ import type { TextStyle, ViewStyle } from "react-native";
 export interface PanelStyles {
   readonly screen: ViewStyle;
   readonly topBar: ViewStyle;
-  readonly headerRow: ViewStyle;
+  readonly toolbarRow: ViewStyle;
   readonly headerText: ViewStyle;
   readonly title: TextStyle;
   readonly subtitle: TextStyle;
@@ -22,23 +22,11 @@ export interface PanelStyles {
   readonly actionPressed: ViewStyle;
   readonly actionText: TextStyle;
   readonly banner: ViewStyle;
-  readonly summaryBar: ViewStyle;
-  readonly summaryStack: ViewStyle;
-  readonly summaryLine: ViewStyle;
-  readonly summaryRail: ViewStyle;
-  readonly summaryAuthority: TextStyle;
-  readonly summaryProvenance: TextStyle;
-  readonly pulseRow: ViewStyle;
-  readonly pulseCell: ViewStyle;
-  readonly pulseValue: TextStyle;
-  readonly pulseLabel: TextStyle;
   readonly workbench: ViewStyle;
   readonly masterPane: ViewStyle;
   readonly masterPaneWide: ViewStyle;
   readonly masterPaneAlone: ViewStyle;
   readonly detailPaneNarrow: ViewStyle;
-  readonly masterHeader: ViewStyle;
-  readonly controlStack: ViewStyle;
   readonly detailPane: ViewStyle;
   readonly paneScroll: ViewStyle;
   readonly paneContent: ViewStyle;
@@ -145,13 +133,18 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     screen: { flex: 1, backgroundColor: theme.colors.surface0 },
     topBar: {
       paddingHorizontal: gutter,
-      paddingTop: gutter,
-      paddingBottom: compact ? 12 : 14,
-      gap: 8,
+      paddingTop: compact ? 10 : 8,
+      paddingBottom: compact ? 8 : 8,
+      gap: 6,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
     },
-    headerRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 14 },
+    /**
+     * The panel's single chrome row: navigation, search and refresh together.
+     * It wraps rather than scrolls, so a narrow panel grows a line instead of
+     * hiding a control.
+     */
+    toolbarRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
     headerText: { flex: 1, gap: 3 },
     title: { color: theme.colors.foreground, fontSize: compact ? 16 : 18, fontWeight: "600" },
     subtitle: { color: theme.colors.foregroundMuted, fontSize: 11 },
@@ -169,26 +162,6 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     actionPressed: { backgroundColor: theme.colors.surface2 },
     actionText: { color: theme.colors.foreground, fontSize: 11, fontWeight: "600" },
     banner: { paddingHorizontal: gutter, paddingTop: 12, gap: 6, maxWidth: DETAIL_MAX_WIDTH },
-    /** Non-compact only: the provenance band between the header and the workbench. */
-    summaryBar: {
-      paddingHorizontal: gutter,
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-    },
-    /**
-     * Provenance and counts are reference material, not the subject of the
-     * panel, so they read as two quiet lines rather than a display band.
-     */
-    summaryStack: { gap: 4 },
-    summaryLine: { flexDirection: "row", alignItems: "center", gap: 8 },
-    summaryRail: { width: 3, alignSelf: "stretch", minHeight: 14, borderRadius: 2 },
-    summaryAuthority: { color: theme.colors.foreground, fontSize: 11, fontWeight: "600" },
-    summaryProvenance: { color: theme.colors.foregroundMuted, fontSize: 11, flexShrink: 1 },
-    pulseRow: { flexDirection: "row", flexWrap: "wrap", columnGap: compact ? 14 : 20, rowGap: 4 },
-    pulseCell: { flexDirection: "row", alignItems: "baseline" },
-    pulseValue: { color: theme.colors.foreground, fontSize: 13, fontWeight: "600" },
-    pulseLabel: { color: theme.colors.foregroundMuted, fontSize: 11 },
     workbench: { flex: 1, flexDirection: "row" },
     /**
      * Operational views put the working list first: 5:4 favours the master pane
@@ -205,15 +178,6 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     /** With no inspector beside it, the divider would sit on the panel edge. */
     masterPaneAlone: { borderRightWidth: 0 },
     detailPaneNarrow: { flex: 3 },
-    masterHeader: {
-      paddingHorizontal: gutter,
-      paddingTop: 10,
-      paddingBottom: 8,
-      gap: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-    },
-    controlStack: { gap: 12, paddingBottom: 4 },
     detailPane: { flex: 4, minWidth: 0 },
     paneScroll: { flex: 1 },
     paneContent: { paddingHorizontal: gutter, paddingTop: rowGap, paddingBottom: gutter * 2, gap: rowGap },
@@ -295,7 +259,15 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     body: { color: theme.colors.foreground, fontSize: 12, lineHeight: 18 },
     muted: { color: theme.colors.foregroundMuted, fontSize: 11, lineHeight: 16 },
     danger: { color: theme.colors.statusDanger, fontSize: 11, lineHeight: 16 },
-    searchRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    /** Grows into whatever the toolbar's chips and buttons leave behind. */
+    searchRow: {
+      flexGrow: 1,
+      flexShrink: 1,
+      minWidth: 160,
+      flexDirection: "row",
+      gap: 8,
+      alignItems: "center",
+    },
     input: {
       flex: 1,
       minHeight: compact ? 40 : 34,
