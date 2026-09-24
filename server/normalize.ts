@@ -9,6 +9,7 @@ import {
   type IssueDetail,
   type PlanSummary,
   type ProjectCounts,
+  type ProjectHealth,
   type Recommendation,
   type SearchResult,
   type SourceAuthority,
@@ -125,6 +126,7 @@ export function normalizeCounts(payload: unknown): ProjectCounts | null {
   const quickRef = asRecord(triage?.["quick_ref"]);
   if (quickRef === null) return null;
   const meta = asRecord(triage?.["meta"]);
+  const healthCounts = asRecord(asRecord(triage?.["project_health"])?.["counts"]);
   return {
     open: readCount(quickRef, "open_count"),
     actionable: readCount(quickRef, "actionable_count"),
@@ -133,6 +135,24 @@ export function normalizeCounts(payload: unknown): ProjectCounts | null {
     notClosed: readCount(quickRef, "not_closed_count"),
     notActionable: readCount(quickRef, "not_actionable_count"),
     total: readCount(meta, "issue_count"),
+    waiting: readNumber(healthCounts, "dependency_blocked"),
+    closed: readNumber(healthCounts, "closed"),
+  };
+}
+
+/** Velocity and cycle state from triage's `project_health`; null when absent. */
+export function normalizeHealth(payload: unknown): ProjectHealth | null {
+  const triage = asRecord(asRecord(payload)?.["triage"]);
+  const health = asRecord(triage?.["project_health"]);
+  if (health === null) return null;
+  const velocity = asRecord(health["velocity"]);
+  const graph = asRecord(health["graph"]);
+  const cycles = graph?.["has_cycles"];
+  return {
+    closedLast7Days: readNumber(velocity, "closed_last_7_days"),
+    closedLast30Days: readNumber(velocity, "closed_last_30_days"),
+    velocityEstimated: readBoolean(velocity, "estimated"),
+    hasCycles: typeof cycles === "boolean" ? cycles : null,
   };
 }
 
@@ -190,14 +210,15 @@ export function normalizeBlockers(payload: unknown, limit = 12): Blocker[] {
   return blockers;
 }
 
-export function normalizeTracks(payload: unknown, trackLimit = 8, itemLimit = 10): Track[] {
+export function normalizeTracks(payload: unknown, trackLimit = 12, itemLimit = 25): Track[] {
   const plan = asRecord(asRecord(payload)?.["plan"]);
   const tracks: Track[] = [];
   for (const entry of readArray(plan, "tracks")) {
     const record = asRecord(entry);
     if (record === null) continue;
     const items: Track["items"] = [];
-    for (const rawItem of readArray(record, "items")) {
+    const rawItems = readArray(record, "items");
+    for (const rawItem of rawItems) {
       const item = asRecord(rawItem);
       const id = readString(item, "id");
       if (item === null || id === null) continue;
@@ -214,6 +235,7 @@ export function normalizeTracks(payload: unknown, trackLimit = 8, itemLimit = 10
       id: readString(record, "track_id") ?? `track-${tracks.length + 1}`,
       reason: readString(record, "reason"),
       items,
+      totalItems: rawItems.length,
     });
     if (tracks.length >= trackLimit) break;
   }
@@ -222,6 +244,10 @@ export function normalizeTracks(payload: unknown, trackLimit = 8, itemLimit = 10
 
 /**
  * Reshapes `bv --robot-graph` into the complete issue set behind the board.
+ *
+ * `bv` keeps a `blocks` edge after its blocker closes, so counting edges would
+ * report "blocked by 1" on work that is ready. Only blockers that are still
+ * open are kept, and only dependents that are still open count as unblocked.
  *
  * Edge semantics, verified against `bv v0.25.0` by cross-checking `br show
  * --json` on real repositories. The two edge kinds do NOT share a direction:
@@ -244,9 +270,25 @@ export function normalizeBoardIssues(
   const rawNodes = readArray(adjacency, "nodes");
   if (rawNodes.length === 0) return { issues: [], typed: facets.ok, total: 0, truncated: false };
 
-  const blockedByCounts = new Map<string, number>();
+  // Statuses first: an edge only blocks while its blocker is still open.
+  const statuses = new Map<string, string>();
+  for (const rawNode of rawNodes) {
+    const node = asRecord(rawNode);
+    const id = readString(node, "id");
+    if (id === null || statuses.has(id)) continue;
+    statuses.set(id, readString(node, "status") ?? "unknown");
+  }
+  const isOpen = (id: string): boolean => {
+    const status = statuses.get(id);
+    // A blocker the graph does not list cannot be shown closed, so it still blocks.
+    return status === undefined || !isClosedStatus(status);
+  };
+
+  const blockedBy = new Map<string, string[]>();
   const unblocksCounts = new Map<string, number>();
   const parents = new Map<string, string>();
+  const childCounts = new Map<string, number>();
+  const seenBlocks = new Set<string>();
   for (const rawEdge of readArray(adjacency, "edges")) {
     const edge = asRecord(rawEdge);
     const from = readString(edge, "from");
@@ -254,10 +296,19 @@ export function normalizeBoardIssues(
     if (from === null || to === null) continue;
     const type = readString(edge, "type");
     if (type === "blocks") {
-      blockedByCounts.set(from, (blockedByCounts.get(from) ?? 0) + 1);
-      unblocksCounts.set(to, (unblocksCounts.get(to) ?? 0) + 1);
+      // A repeated edge is one dependency, not two.
+      const pair = `${from}\u0000${to}`;
+      if (seenBlocks.has(pair)) continue;
+      seenBlocks.add(pair);
+      if (isOpen(to)) {
+        const list = blockedBy.get(from);
+        if (list === undefined) blockedBy.set(from, [to]);
+        else list.push(to);
+      }
+      if (isOpen(from)) unblocksCounts.set(to, (unblocksCounts.get(to) ?? 0) + 1);
     } else if (type === "parent-child" && !parents.has(from)) {
       parents.set(from, to);
+      childCounts.set(to, (childCounts.get(to) ?? 0) + 1);
     }
   }
 
@@ -269,7 +320,7 @@ export function normalizeBoardIssues(
     const id = readString(node, "id");
     if (id === null || seen.has(id)) continue;
     seen.add(id);
-    const status = readString(node, "status") ?? "unknown";
+    const status = statuses.get(id) ?? "unknown";
     const facet = facets.byId.get(id);
     const issue: BoardIssue = {
       id,
@@ -277,9 +328,10 @@ export function normalizeBoardIssues(
       status,
       priority: readNumber(node, "priority"),
       labels: readStringArray(node, "labels"),
-      blockedByCount: blockedByCounts.get(id) ?? 0,
+      blockedBy: blockedBy.get(id) ?? [],
       unblocksCount: unblocksCounts.get(id) ?? 0,
       parentId: parents.get(id) ?? null,
+      childCount: childCounts.get(id) ?? 0,
       type: facet?.type ?? null,
       assignee: facet?.assignee ?? null,
     };
@@ -291,8 +343,19 @@ export function normalizeBoardIssues(
   if (total <= limit) {
     return { issues: [...open, ...closed], typed: facets.ok, total, truncated: false };
   }
+  // Closed containers above open work are kept before any other closed issue,
+  // so a truncated board still groups every open issue under its real epic.
+  const ancestors = new Set<string>();
+  for (const issue of open) {
+    for (let parent = parents.get(issue.id); parent !== undefined && !ancestors.has(parent); parent = parents.get(parent)) {
+      ancestors.add(parent);
+    }
+  }
+  const keptClosed = closed.filter((issue) => ancestors.has(issue.id));
+  const otherClosed = closed.filter((issue) => !ancestors.has(issue.id));
+  const kept = [...open, ...keptClosed];
   return {
-    issues: [...open, ...closed].slice(0, Math.max(limit, open.length)),
+    issues: [...kept, ...otherClosed.slice(0, Math.max(0, limit - kept.length))],
     typed: facets.ok,
     total,
     truncated: true,
@@ -437,6 +500,7 @@ export function normalizePlanSummary(payload: unknown): PlanSummary | null {
   return {
     totalActionable: readNumber(plan, "total_actionable"),
     totalBlocked: readNumber(plan, "total_blocked"),
+    totalTracks: readArray(plan, "tracks").length,
     highestImpact: readString(summary, "highest_impact"),
     impactReason: readString(summary, "impact_reason"),
   };

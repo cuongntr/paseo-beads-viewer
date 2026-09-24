@@ -56,6 +56,13 @@ export const SourceSnapshotSchema = z.object({
 });
 export type SourceSnapshot = z.output<typeof SourceSnapshotSchema>;
 
+/**
+ * `bv`'s own counts, kept verbatim. Two of them do not mean what a reader
+ * assumes: `blocked` counts only issues whose *status* is `blocked`, and
+ * `actionable` includes epics with no open blocker. Dependency-blocked work is
+ * `waiting`, read from `project_health`; the panel's own headline counts come
+ * from the graph instead (see `client/project.ts`).
+ */
 export const ProjectCountsSchema = z.object({
   open: z.number(),
   actionable: z.number(),
@@ -64,8 +71,23 @@ export const ProjectCountsSchema = z.object({
   notClosed: z.number(),
   notActionable: z.number(),
   total: z.number(),
+  /** `project_health.counts.dependency_blocked`; null when `bv` omitted it. */
+  waiting: z.number().nullable(),
+  /** `project_health.counts.closed`; null when `bv` omitted it. */
+  closed: z.number().nullable(),
 });
 export type ProjectCounts = z.output<typeof ProjectCountsSchema>;
+
+/** Pace and structural health from `project_health`, which triage already carries. */
+export const ProjectHealthSchema = z.object({
+  closedLast7Days: z.number().nullable(),
+  closedLast30Days: z.number().nullable(),
+  /** True when `bv` marked the velocity as an estimate. */
+  velocityEstimated: z.boolean(),
+  /** Null when `bv` did not report cycle detection. */
+  hasCycles: z.boolean().nullable(),
+});
+export type ProjectHealth = z.output<typeof ProjectHealthSchema>;
 
 export const RecommendationSchema = z.object({
   id: z.string(),
@@ -105,12 +127,16 @@ export const TrackSchema = z.object({
   id: z.string(),
   reason: z.string().nullable(),
   items: z.array(TrackItemSchema),
+  /** Items `bv` listed in this track, which exceeds `items.length` when capped. */
+  totalItems: z.number(),
 });
 export type Track = z.output<typeof TrackSchema>;
 
 export const PlanSummarySchema = z.object({
   totalActionable: z.number().nullable(),
   totalBlocked: z.number().nullable(),
+  /** Tracks `bv` reported, before the payload cap. */
+  totalTracks: z.number(),
   highestImpact: z.string().nullable(),
   impactReason: z.string().nullable(),
 });
@@ -119,8 +145,9 @@ export type PlanSummary = z.output<typeof PlanSummarySchema>;
 /**
  * One issue from `bv --robot-graph`, which is the only `bv` read that returns
  * the *whole* project rather than an analysis-selected subset. Status stays an
- * opaque string; the dependency counts are derived from the graph's `blocks`
- * edges, where `from` is blocked by `to`.
+ * opaque string; the dependencies are derived from the graph's `blocks` edges,
+ * where `from` is blocked by `to`. A `blocks` edge outlives the blocker being
+ * closed, so only blockers that are still open count.
  */
 export const BoardIssueSchema = z.object({
   id: z.string(),
@@ -128,10 +155,17 @@ export const BoardIssueSchema = z.object({
   status: z.string(),
   priority: z.number().nullable(),
   labels: z.array(z.string()),
-  blockedByCount: z.number(),
+  /** Ids of the blockers that are not closed yet, in edge order. */
+  blockedBy: z.array(z.string()),
+  /** How many issues that are not closed yet wait on this one. */
   unblocksCount: z.number(),
   /** Parent issue id. The graph emits `parent-child` as child → parent. */
   parentId: z.string().nullable(),
+  /**
+   * Issues naming this one as parent, counted before any truncation, so an
+   * epic whose closed children were dropped is still known to be a container.
+   */
+  childCount: z.number(),
   /** `epic`, `task`, `bug`, … from the tracker; null when the overlay is absent. */
   type: z.string().nullable(),
   /** From the tracker overlay; null when unassigned or the overlay is absent. */

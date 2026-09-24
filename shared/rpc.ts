@@ -11,6 +11,7 @@ import {
   IssueIdSchema,
   PlanSummarySchema,
   ProjectCountsSchema,
+  ProjectHealthSchema,
   RecommendationSchema,
   SearchLimitSchema,
   SearchQuerySchema,
@@ -45,6 +46,7 @@ export const dashboardRpc = defineRpc({
     projectState: z.enum(["ready", "missing", "error"]),
     source: SourceSnapshotSchema.nullable(),
     counts: ProjectCountsSchema.nullable(),
+    health: ProjectHealthSchema.nullable(),
     recommendations: z.array(RecommendationSchema),
     blockers: z.array(BlockerSchema),
     /** Every issue `bv --robot-graph` reported, which is what the board lays out. */

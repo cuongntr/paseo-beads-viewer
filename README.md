@@ -1,8 +1,9 @@
 # paseo-beads
 
-A read-only Beads console for Paseo workspaces. It surfaces project pulse, triage picks,
-execution tracks, blockers, and alerts for the workspace you are in, plus a read-only
-whole-project board, issue search, Markdown-rendered issue detail, and a composer attachment
+A read-only Beads console for Paseo workspaces. For the workspace you are in it shows how far
+along the project is per epic and work package, what is in progress, what can start now, what
+needs a human, and the critical chain of dependencies; a whole-project board by work state;
+execution tracks; risks; issue search; Markdown-rendered issue detail; and a composer attachment
 source for Beads issues.
 
 The plugin never invokes a mutating `br` or `bd` command. There is no claim, close,
@@ -15,8 +16,8 @@ loading a `bd`/Dolt workspace, so `bv` calls are serialized per workspace.
 - The [`bv`](https://github.com/Dicklesworthstone/beads_viewer) analysis CLI on the daemon machine's `PATH`.
   Verified against `bv v0.25.0`.
 - A project that uses Beads through `br` or `bd`. The tracker CLI matching the project must
-  also be on the daemon `PATH` for issue detail, and for the issue types and assignees the board's
-  Epic and Type axes group by; the dashboard and the status axis work without it.
+  also be on the daemon `PATH` for issue detail and for issue types and assignees; everything
+  else works without it.
 
 Everything else degrades gracefully: a missing `bv`, a workspace without a `.beads` source,
 and an empty-but-healthy project are three distinct, clearly labelled states.
@@ -86,8 +87,10 @@ After editing source, run `paseo plugin reload paseo-beads`.
 - Plugin code never parses or writes `.beads/*.jsonl` or a Beads SQLite/Dolt database. It reads
   only `.beads/metadata.json` to bind tracker identity to `bv`'s selected source; issue data comes
   from CLI output. `bv` itself may refresh a `bd` compatibility export, so its calls are serialized.
-- No graph, readiness, or cycle analysis is computed in the plugin. `bv --robot-*` is the sole
-  analysis authority, and its `source_authority`, freshness, and `data_hash` are shown as
+- `bv --robot-*` is the authority for ranking, recommendations, execution tracks, alerts, cycle
+  detection, and velocity. The plugin derives only each issue's work state (from its status and
+  its still-open blockers) and the longest remaining dependency chain, because `bv`'s own counts
+  treat dependency-blocked work as unblocked and epics as ready; see the design doc. `bv` and its `source_authority`, freshness, and `data_hash` are shown as
   reported.
 - Only short-lived normalized command results are cached (15 s for the dashboard, 2 min for
   tracker identity and its validated route), invalidated purely by expiry. No derived graph is
@@ -106,16 +109,16 @@ After editing source, run `paseo plugin reload paseo-beads`.
   reshapes them.
 - Statuses, readiness values, and alert severities are treated as opaque strings, so a newer
   `bv` renders without a plugin update but without bespoke styling for new values.
-- The **Board** view shows every issue `bv --robot-graph` reports and groups it on one of four
-  axes: **Epic** (the containing epic, walking up the parent chain), **Feature** (the `feature:`
-  label), **Type** (epic/feature/task/bug), or **Status**. A **Live only** switch, on by default,
-  hides closed issues; group headers keep the true `done/size` progress either way. Groups with
-  nothing live left start collapsed, each group renders at most 60 cards with the rest reported as
-  `+N more`, and a project past 2000 issues drops closed issues from the payload first and says so.
-  Epic and Type need issue types from the tracker; without them those axes are disabled and the
-  board groups by status instead. If the graph read fails the board falls back to the capped
-  triage+plan working set and relabels itself. It is read-only: no drag, no drop, no status
-  change.
+- The **Board** lays out every piece of work `bv --robot-graph` reports in lanes by **Package**
+  (direct parent, the default), **Epic** (outermost container), **Feature** (`feature:` label), or
+  **None**, and columns by work state: In progress, Ready, Waiting, Held (only when something is
+  held), and Done (only with **Show done**). Epics and other containers are lane headings and
+  progress, never cards. Finished lanes are hidden and counted, each lane and state renders at
+  most 40 cards with the rest reported as `+N more`, and a project past 2000 issues drops closed
+  issues from the payload first and says so. If the graph read fails, the panel falls back to the
+  triage and plan working set and says so. It is read-only: no drag, no drop, no status change.
+- "Needs a human" is read from labels (`human-approval`, `human`, `needs-human`, `approval`,
+  `needs-approval`, `needs-decision`); Beads has no field for it.
 - Issue prose renders through a bounded in-repo Markdown subset (headings h1–h3, lists, task
   items, quotes, rules, code, bold, italic, links). HTML, images, and tables are not rendered,
   and link targets are shown as text — the panel never opens a URL.

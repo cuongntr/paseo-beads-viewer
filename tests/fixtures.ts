@@ -68,6 +68,13 @@ export const triagePayload = {
         claimable: false,
       },
     ],
+    // Shaped after bv v0.25: `blocked` in quick_ref is the status count, while
+    // dependency-blocked work only appears here.
+    project_health: {
+      counts: { total: 49, open: 3, closed: 45, blocked: 0, actionable: 2, dependency_blocked: 2 },
+      graph: { node_count: 49, edge_count: 30, has_cycles: false },
+      velocity: { closed_last_7_days: 3, closed_last_30_days: 12, estimated: true },
+    },
     blockers_to_clear: [
       {
         id: "room-z4e.3",

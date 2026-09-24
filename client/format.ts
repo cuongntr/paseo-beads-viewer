@@ -1,5 +1,6 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { Alert, CommandError, SourceAuthority } from "../shared/beads";
+import type { WorkState } from "./project";
 
 /** Semantic accent used by the status rail and severity marks. */
 export type Tone = "neutral" | "accent" | "success" | "warning" | "danger";
@@ -174,4 +175,67 @@ export function errorLabel(error: CommandError | null): string {
 
 export function alertHeadline(alert: Alert): string {
   return alert.issueId === null ? alert.message : `${alert.issueId} — ${alert.message}`;
+}
+
+/**
+ * Derived work state carries the row colour: it is the one fact that tells
+ * cards apart on a project where every issue shares a priority.
+ */
+export function stateTone(state: WorkState): Tone {
+  switch (state) {
+    case "active":
+      return "accent";
+    case "ready":
+      return "success";
+    case "held":
+      return "danger";
+    case "waiting":
+    case "done":
+      return "neutral";
+  }
+}
+
+export function stateLabel(state: WorkState): string {
+  switch (state) {
+    case "active":
+      return "In progress";
+    case "ready":
+      return "Ready";
+    case "waiting":
+      return "Waiting";
+    case "held":
+      return "Held";
+    case "done":
+      return "Done";
+  }
+}
+
+export function stateIconName(state: WorkState): string {
+  switch (state) {
+    case "active":
+      return "Play";
+    case "ready":
+      return "CircleDot";
+    case "waiting":
+      return "Circle";
+    case "held":
+      return "CircleSlash";
+    case "done":
+      return "CircleCheck";
+  }
+}
+
+/** "waits on a, b +3": the open blockers themselves, not just how many. */
+export function waitsOnLabel(blockedBy: readonly string[], shown = 2): string | null {
+  if (blockedBy.length === 0) return null;
+  const head = blockedBy.slice(0, shown).join(", ");
+  const rest = blockedBy.length - shown;
+  return rest > 0 ? `waits on ${head} +${rest}` : `waits on ${head}`;
+}
+
+/** Whole-number percentage, never rounding unfinished work up to 100. */
+export function percentDone(done: number, total: number): number {
+  if (total <= 0) return 0;
+  const percent = Math.round((done / total) * 100);
+  return done < total ? Math.min(percent, 99) : percent;
 }

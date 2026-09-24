@@ -106,9 +106,44 @@ export interface PanelStyles {
   readonly boardHeader: ViewStyle;
   readonly boardHeaderStacked: ViewStyle;
   readonly boardControlRow: ViewStyle;
-  readonly boardLaneRow: ViewStyle;
-  readonly boardLane: ViewStyle;
+  readonly boardContent: ViewStyle;
+  readonly boardColumnsRow: ViewStyle;
+  readonly boardColumnHeaderBand: ViewStyle;
+  readonly boardColumnHeader: ViewStyle;
+  readonly boardCell: ViewStyle;
   readonly boardLaneStacked: ViewStyle;
+  readonly laneToggle: ViewStyle;
+  readonly laneTitleBlock: ViewStyle;
+  readonly laneTitle: TextStyle;
+  readonly laneProgressText: TextStyle;
+  readonly laneSummary: TextStyle;
+  readonly segmentCaption: TextStyle;
+  readonly segmentRow: ViewStyle;
+  readonly segmentItem: ViewStyle;
+  readonly segmentItemSelected: ViewStyle;
+  readonly segmentLabel: TextStyle;
+  readonly segmentLabelSelected: TextStyle;
+  readonly progressTrack: ViewStyle;
+  readonly progressTrackWide: ViewStyle;
+  readonly progressFill: ViewStyle;
+  readonly overviewColumns: ViewStyle;
+  readonly overviewColumn: ViewStyle;
+  readonly summaryBlock: ViewStyle;
+  readonly summaryHeadRow: ViewStyle;
+  readonly summaryHeadline: TextStyle;
+  readonly summaryPercent: TextStyle;
+  readonly summaryFigures: ViewStyle;
+  readonly summaryFigure: ViewStyle;
+  readonly summaryFigureValue: TextStyle;
+  readonly summaryFigureLabel: TextStyle;
+  readonly rootBlock: ViewStyle;
+  readonly packageIndent: ViewStyle;
+  readonly groupRow: ViewStyle;
+  readonly groupRowHead: ViewStyle;
+  readonly groupTitle: TextStyle;
+  readonly groupTitleStrong: TextStyle;
+  readonly facetWarningText: TextStyle;
+  readonly facetAccentText: TextStyle;
   readonly boardLaneHeader: ViewStyle;
   readonly boardLaneTitle: TextStyle;
   readonly boardLaneCount: TextStyle;
@@ -401,18 +436,80 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     },
     /** The board's own controls and its scope note share one line. */
     boardControlRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10 },
-    /** Non-compact: fixed-width lanes inside one horizontal scroll region. */
-    boardLaneRow: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 12 },
-    boardLane: {
-      width: 236,
-      gap: 8,
-      paddingRight: 12,
-      borderRightWidth: 1,
-      borderRightColor: theme.colors.border,
+    boardContent: { paddingHorizontal: gutter, paddingTop: 4, paddingBottom: gutter * 2, gap: 6 },
+    /**
+     * Wide board: every lane's cells and the column header share one flex row
+     * shape, so the columns line up without a horizontal scroll region.
+     */
+    boardColumnsRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+    boardColumnHeaderBand: {
+      paddingHorizontal: gutter,
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
     },
-    /** Compact: full-width stacked lane sections instead of narrow columns. */
-    boardLaneStacked: { gap: 8, paddingTop: 4 },
-    boardLaneHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingBottom: 2 },
+    boardColumnHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
+    boardCell: { flex: 1, minWidth: 0, gap: 5 },
+    /** One lane: its header over its row of cells, or its stacked cards when compact. */
+    boardLaneStacked: {
+      gap: 6,
+      paddingTop: 8,
+      paddingBottom: 6,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    boardLaneHeader: { flexDirection: "row", alignItems: "center", gap: 8, paddingBottom: 2 },
+    laneToggle: { padding: 4, borderRadius: 3 },
+    laneTitleBlock: { flexShrink: 1, flexGrow: 1, minWidth: 0, gap: 1 },
+    laneTitle: { color: theme.colors.foreground, fontSize: 12, fontWeight: "700" },
+    laneProgressText: { color: theme.colors.foreground, fontSize: 11, fontWeight: "600", minWidth: 34, textAlign: "right" },
+    laneSummary: { color: theme.colors.foregroundMuted, fontSize: 10, flexShrink: 1, minWidth: 0 },
+    segmentCaption: { color: theme.colors.foregroundMuted, fontSize: 10, letterSpacing: 0.3 },
+    /** Board controls are subordinate to the view tabs, so they are smaller and borderless until chosen. */
+    segmentRow: {
+      flexDirection: "row",
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 4,
+      overflow: "hidden",
+    },
+    segmentItem: {
+      minHeight: compact ? 34 : 26,
+      justifyContent: "center",
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
+    segmentItemSelected: { backgroundColor: theme.colors.surface2 },
+    segmentLabel: { color: theme.colors.foregroundMuted, fontSize: 11 },
+    segmentLabelSelected: { color: theme.colors.foreground, fontSize: 11, fontWeight: "600" },
+    progressTrack: {
+      width: 72,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: theme.colors.surface2,
+      overflow: "hidden",
+    },
+    progressTrackWide: { width: "100%" },
+    progressFill: { height: "100%", borderRadius: 2 },
+    /** Two columns on a wide pane, one when it is too narrow for both. */
+    overviewColumns: { flexDirection: "row", flexWrap: "wrap", gap: compact ? 12 : 28, alignItems: "flex-start" },
+    overviewColumn: { flexGrow: 1, flexShrink: 1, flexBasis: 340, minWidth: 0, gap: rowGap },
+    summaryBlock: { gap: 8, paddingTop: 4 },
+    summaryHeadRow: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", gap: 10 },
+    summaryHeadline: { color: theme.colors.foreground, fontSize: compact ? 18 : 20, fontWeight: "700" },
+    summaryPercent: { color: theme.colors.foregroundMuted, fontSize: 13, fontWeight: "600" },
+    summaryFigures: { flexDirection: "row", flexWrap: "wrap", gap: compact ? 16 : 24, paddingTop: 2 },
+    summaryFigure: { gap: 1 },
+    summaryFigureValue: { fontSize: 18, fontWeight: "700" },
+    summaryFigureLabel: { color: theme.colors.foregroundMuted, fontSize: 10, letterSpacing: 0.3 },
+    rootBlock: { gap: 2, paddingBottom: 6 },
+    packageIndent: { paddingLeft: 14 },
+    groupRow: { gap: 4, paddingVertical: 6, paddingHorizontal: 4, borderRadius: 3 },
+    groupRowHead: { flexDirection: "row", alignItems: "baseline", gap: 10 },
+    groupTitle: { flex: 1, color: theme.colors.foreground, fontSize: 12 },
+    groupTitleStrong: { flex: 1, color: theme.colors.foreground, fontSize: 13, fontWeight: "700" },
+    facetWarningText: { color: theme.colors.statusWarning, fontSize: 10, fontWeight: "600" },
+    facetAccentText: { color: theme.colors.accent, fontSize: 10, fontWeight: "600" },
     boardLaneTitle: {
       color: theme.colors.foreground,
       fontSize: 11,

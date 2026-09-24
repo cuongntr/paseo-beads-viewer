@@ -5,15 +5,21 @@ import { Pressable, Text, View } from "react-native";
 import type { Alert, Blocker, IssueDetail, Recommendation, SearchResult, Track } from "../shared/beads";
 import {
   alertHeadline,
+  percentDone,
   priorityLabel,
   priorityTone,
   severityTone,
+  stateIconName,
+  stateLabel,
+  stateTone,
   statusIconName,
   statusLabel,
   toneColor,
+  waitsOnLabel,
   type Tone,
 } from "./format";
 import { MarkdownView } from "./markdown-view";
+import type { WorkItem, WorkState } from "./project";
 import type { PanelStyles } from "./styles";
 
 interface Common {
@@ -156,6 +162,144 @@ export function RailRow({
   );
 }
 
+/** Derived work state as icon plus text, drawn in the state's own tone. */
+export function WorkStateFacet({ styles, theme, state }: Common & { state: WorkState }) {
+  const tone = stateTone(state);
+  const color = tone === "neutral" ? theme.colors.foregroundMuted : toneColor(theme, tone);
+  return (
+    <View style={styles.statusChip}>
+      <Icon name={stateIconName(state)} size={12} color={color} />
+      <Text style={styles.statusChipText}>{stateLabel(state)}</Text>
+    </View>
+  );
+}
+
+/** Raw statuses that the derived state already says, so repeating them is noise. */
+const PLAIN_STATUSES: readonly string[] = ["open", "in_progress", "closed"];
+
+/**
+ * The facets that tell one piece of work from another. Everything shared by
+ * the whole project (one priority, the type "task") is left out, and the
+ * exceptions a reader acts on — a person must act, the critical chain, what it
+ * waits on — are named.
+ */
+export function WorkFacets({
+  styles,
+  theme,
+  item,
+  showState,
+  showPriority,
+}: Common & { item: WorkItem; showState: boolean; showPriority: boolean }) {
+  const rawStatus = item.status.trim().toLowerCase();
+  return (
+    <>
+      <IdentFacet styles={styles} theme={theme} id={item.id} />
+      {showState ? <WorkStateFacet styles={styles} theme={theme} state={item.state} /> : null}
+      {showPriority ? <PriorityFacet styles={styles} theme={theme} priority={item.priority} /> : null}
+      <Facet
+        styles={styles}
+        theme={theme}
+        value={PLAIN_STATUSES.includes(rawStatus) ? null : statusLabel(item.status)}
+      />
+      <Facet styles={styles} theme={theme} value={item.assignee === null ? null : `@${item.assignee}`} />
+      {item.attention && item.state !== "done" ? (
+        <Text style={styles.facetWarningText}>needs a human</Text>
+      ) : null}
+      {item.critical ? <Text style={styles.facetAccentText}>critical chain</Text> : null}
+      <Facet styles={styles} theme={theme} value={item.type === "bug" ? "bug" : null} />
+      <Facet
+        styles={styles}
+        theme={theme}
+        value={
+          item.state === "done"
+            ? null
+            : item.blockedBy.length > 0
+              ? waitsOnLabel(item.blockedBy)
+              : item.heldVia === null
+                ? null
+                : `${waitsOnLabel(item.inheritedBlockedBy)} via ${item.heldVia}`
+        }
+      />
+      <Facet
+        styles={styles}
+        theme={theme}
+        value={item.unblocksCount === 0 || item.state === "done" ? null : `unblocks ${item.unblocksCount}`}
+      />
+    </>
+  );
+}
+
+/** Spoken form of a work item: every fact the facets show, in words. */
+export function workAccessibility(item: WorkItem): string {
+  return accessibilityFacts([
+    `${item.id}, ${item.title}`,
+    stateLabel(item.state),
+    priorityLabel(item.priority) === null ? null : `priority ${priorityLabel(item.priority)}`,
+    item.assignee === null ? null : `assigned to ${item.assignee}`,
+    item.attention ? "needs a human" : null,
+    item.critical ? "on the critical chain" : null,
+    item.blockedBy.length === 0 ? null : `waits on ${item.blockedBy.join(", ")}`,
+    item.heldVia === null ? null : `its parent ${item.heldVia} waits on ${item.inheritedBlockedBy.join(", ")}`,
+    item.unblocksCount === 0 ? null : `unblocks ${item.unblocksCount}`,
+  ]);
+}
+
+/** One piece of work as a list row, coloured by its derived state. */
+export function WorkRow({
+  styles,
+  theme,
+  item,
+  showState,
+  showPriority,
+  note,
+  selected,
+  onSelect,
+}: Common & {
+  item: WorkItem;
+  showState: boolean;
+  showPriority: boolean;
+  note?: string | null;
+  selected: boolean;
+  onSelect: (issueId: string) => void;
+}) {
+  return (
+    <RailRow
+      styles={styles}
+      theme={theme}
+      tone={stateTone(item.state)}
+      title={item.title}
+      facets={
+        <WorkFacets styles={styles} theme={theme} item={item} showState={showState} showPriority={showPriority} />
+      }
+      note={note ?? null}
+      selected={selected}
+      accessibilityLabel={workAccessibility(item)}
+      onPress={() => onSelect(item.id)}
+    />
+  );
+}
+
+/** A thin done/total bar; the numbers beside it stay the source of truth. */
+export function ProgressBar({
+  styles,
+  theme,
+  done,
+  total,
+  wide,
+}: Common & { done: number; total: number; wide?: boolean }) {
+  const percent = percentDone(done, total);
+  return (
+    <View
+      style={[styles.progressTrack, wide === true ? styles.progressTrackWide : null]}
+      accessibilityRole="progressbar"
+      accessibilityLabel={`${done} of ${total} done`}
+      accessibilityValue={{ min: 0, max: 100, now: percent }}
+    >
+      <View style={[styles.progressFill, { width: `${percent}%`, backgroundColor: theme.colors.statusSuccess }]} />
+    </View>
+  );
+}
+
 export function Empty({ styles, message }: Common & { message: string }) {
   return <Text style={styles.muted}>{message}</Text>;
 }
@@ -232,7 +376,8 @@ export function TrackBlock({
   return (
     <View style={styles.trackBlock}>
       <Text style={styles.sectionMeta}>
-        {track.id} · {track.items.length} item{track.items.length === 1 ? "" : "s"}
+        {track.id} · {track.totalItems} item{track.totalItems === 1 ? "" : "s"}
+        {track.totalItems > track.items.length ? ` (${track.items.length} shown)` : ""}
         {track.reason === null ? "" : ` · ${track.reason}`}
       </Text>
       {track.items.map((item) => (

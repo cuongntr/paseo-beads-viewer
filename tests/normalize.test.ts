@@ -20,6 +20,7 @@ import {
   normalizeBlockers,
   normalizeBoardIssues,
   normalizeCounts,
+  normalizeHealth,
   normalizeIssueDetail,
   normalizePlanSummary,
   normalizeRecommendations,
@@ -90,7 +91,25 @@ describe("triage normalization", () => {
       notClosed: 4,
       notActionable: 2,
       total: 49,
+      waiting: 2,
+      closed: 45,
     });
+  });
+
+  it("reads pace and cycle state from project_health", () => {
+    expect(normalizeHealth(triagePayload)).toEqual({
+      closedLast7Days: 3,
+      closedLast30Days: 12,
+      velocityEstimated: true,
+      hasCycles: false,
+    });
+  });
+
+  it("leaves waiting and health unknown when bv omits project_health", () => {
+    const bare = { triage: { meta: { issue_count: 1 }, quick_ref: { open_count: 1 } } };
+    expect(normalizeCounts(bare)?.waiting).toBeNull();
+    expect(normalizeHealth(bare)).toBeNull();
+    expect(normalizeHealth(missingProjectPayload)).toBeNull();
   });
 
   it("distinguishes an empty project from a missing one", () => {
@@ -156,9 +175,11 @@ describe("plan normalization", () => {
     expect(tracks.map((track) => TrackSchema.parse(track))).toEqual(tracks);
     expect(tracks[0]?.id).toBe("track-A");
     expect(tracks[0]?.items.map((item) => item.id)).toEqual(["pib-cyhm", "pib-x1q9"]);
+    expect(tracks[0]?.totalItems).toBe(2);
     expect(normalizePlanSummary(planPayload)).toEqual({
       totalActionable: 4,
       totalBlocked: 14,
+      totalTracks: 1,
       highestImpact: "pib-cyhm",
       impactReason: "No downstream dependencies",
     });
@@ -167,6 +188,23 @@ describe("plan normalization", () => {
   it("returns an empty track list and a null summary when the plan section is missing", () => {
     expect(normalizeTracks(missingProjectPayload)).toEqual([]);
     expect(normalizePlanSummary(missingProjectPayload)).toBeNull();
+  });
+
+  it("reports the uncapped track and item totals so a capped plan does not undercount", () => {
+    const item = (id: string) => ({ id, title: id, status: "open" });
+    const payload = {
+      plan: {
+        tracks: Array.from({ length: 3 }, (_, index) => ({
+          track_id: `track-${index}`,
+          items: [item(`a-${index}`), item(`b-${index}`), item(`c-${index}`)],
+        })),
+      },
+    };
+    const tracks = normalizeTracks(payload, 2, 2);
+    expect(tracks).toHaveLength(2);
+    expect(tracks[0]?.items).toHaveLength(2);
+    expect(tracks[0]?.totalItems).toBe(3);
+    expect(normalizePlanSummary(payload)?.totalTracks).toBe(3);
   });
 
   it("synthesizes a track id when bv omits one", () => {
@@ -343,9 +381,84 @@ describe("board issues from the dependency graph", () => {
     const byId = new Map(board.issues.map((entry) => [entry.id, entry]));
     // Two issues declare pib-x1q9 as their prerequisite.
     expect(byId.get("pib-x1q9")?.unblocksCount).toBe(2);
-    expect(byId.get("pib-x1q9")?.blockedByCount).toBe(0);
-    expect(byId.get("pib-blk1")?.blockedByCount).toBe(1);
-    expect(byId.get("pib-cyhm")?.blockedByCount).toBe(1);
+    expect(byId.get("pib-x1q9")?.blockedBy).toEqual([]);
+    expect(byId.get("pib-blk1")?.blockedBy).toEqual(["pib-x1q9"]);
+    expect(byId.get("pib-cyhm")?.blockedBy).toEqual(["pib-x1q9"]);
+  });
+
+  it("drops a blocker once it is closed, because bv keeps the edge", () => {
+    // Shaped after a real project: three tasks still carried a `blocks` edge
+    // to a closed task and rendered "blocked by 1" while bv ranked them ready.
+    const board = normalizeBoardIssues({
+      adjacency: {
+        nodes: [
+          { id: "t-1", status: "closed" },
+          { id: "t-2", status: "open" },
+          { id: "t-3", status: "open" },
+          { id: "t-4", status: "closed" },
+        ],
+        edges: [
+          { from: "t-2", to: "t-1", type: "blocks" },
+          { from: "t-3", to: "t-1", type: "blocks" },
+          { from: "t-3", to: "t-2", type: "blocks" },
+          // A closed dependent no longer waits on anything.
+          { from: "t-4", to: "t-2", type: "blocks" },
+        ],
+      },
+    });
+    const byId = new Map(board.issues.map((entry) => [entry.id, entry]));
+    expect(byId.get("t-2")?.blockedBy).toEqual([]);
+    expect(byId.get("t-3")?.blockedBy).toEqual(["t-2"]);
+    expect(byId.get("t-2")?.unblocksCount).toBe(1);
+    expect(byId.get("t-1")?.unblocksCount).toBe(2);
+  });
+
+  it("counts a repeated blocks edge once", () => {
+    const board = normalizeBoardIssues({
+      adjacency: {
+        nodes: [{ id: "a", status: "open" }, { id: "b", status: "open" }],
+        edges: [
+          { from: "a", to: "b", type: "blocks" },
+          { from: "a", to: "b", type: "blocks" },
+        ],
+      },
+    });
+    const byId = new Map(board.issues.map((entry) => [entry.id, entry]));
+    expect(byId.get("a")?.blockedBy).toEqual(["b"]);
+    expect(byId.get("b")?.unblocksCount).toBe(1);
+  });
+
+  it("counts children, closed ones included, so truncation cannot hide a container", () => {
+    const byId = new Map(normalizeBoardIssues(graphPayload).issues.map((entry) => [entry.id, entry]));
+    expect(byId.get("pib-old1")?.childCount).toBe(1);
+    expect(byId.get("pib-old2")?.childCount).toBe(0);
+  });
+
+  it("keeps closed ancestors of open work when truncating, before other closed issues", () => {
+    const board = normalizeBoardIssues(
+      {
+        adjacency: {
+          nodes: [
+            { id: "old-1", status: "closed" },
+            { id: "old-2", status: "closed" },
+            { id: "epic", status: "closed" },
+            { id: "task", status: "open" },
+          ],
+          edges: [{ from: "task", to: "epic", type: "parent-child" }],
+        },
+      },
+      EMPTY_FACETS,
+      2,
+    );
+    expect(board.truncated).toBe(true);
+    expect(board.issues.map((entry) => entry.id)).toEqual(["task", "epic"]);
+  });
+
+  it("keeps a blocker the graph does not list, since it cannot be shown closed", () => {
+    const board = normalizeBoardIssues({
+      adjacency: { nodes: [{ id: "t-1", status: "open" }], edges: [{ from: "t-1", to: "elsewhere-9", type: "blocks" }] },
+    });
+    expect(board.issues[0]?.blockedBy).toEqual(["elsewhere-9"]);
   });
 
   it("reads parent-child as child-to-parent, the opposite way round from blocks", () => {
@@ -355,7 +468,7 @@ describe("board issues from the dependency graph", () => {
     expect(byId.get("pib-old2")?.parentId).toBe("pib-old1");
     expect(byId.get("pib-old1")?.parentId).toBeNull();
     // Containment is not blocking: a parent edge must not move either count.
-    expect(byId.get("pib-old2")?.blockedByCount).toBe(0);
+    expect(byId.get("pib-old2")?.blockedBy).toEqual([]);
     expect(byId.get("pib-old1")?.unblocksCount).toBe(0);
   });
 
@@ -488,6 +601,7 @@ describe("dashboard contract", () => {
       projectState: "error" as const,
       source: null,
       counts: null,
+      health: null,
       recommendations: [],
       blockers: [],
       board: { issues: [], typed: false, total: 0, truncated: false },
@@ -516,6 +630,7 @@ describe("dashboard contract", () => {
       projectState: "ready" as const,
       source: normalizeSource(triagePayload),
       counts: normalizeCounts(triagePayload),
+      health: normalizeHealth(triagePayload),
       recommendations: normalizeRecommendations(triagePayload),
       blockers: normalizeBlockers(triagePayload),
       board: normalizeBoardIssues(graphPayload, parseTrackerFacets(facetsCsv)),

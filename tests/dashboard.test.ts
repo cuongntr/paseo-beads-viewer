@@ -123,7 +123,7 @@ describe("dashboard assembly", () => {
     // Wiring check: these counts can only come from the graph's own edges.
     const byId = new Map(result.board.issues.map((entry) => [entry.id, entry]));
     expect(byId.get("pib-x1q9")?.unblocksCount).toBe(2);
-    expect(byId.get("pib-blk1")?.blockedByCount).toBe(1);
+    expect(byId.get("pib-blk1")?.blockedBy).toEqual(["pib-x1q9"]);
     // …and these two can only come from the tracker overlay.
     expect(result.board.typed).toBe(true);
     expect(byId.get("pib-x1q9")?.type).toBe("epic");
