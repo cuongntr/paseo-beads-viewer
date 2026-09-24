@@ -23,6 +23,26 @@ loading a `bd`/Dolt workspace, so `bv` calls are serialized per workspace.
 Everything else degrades gracefully: a missing `bv`, a workspace without a `.beads` source,
 and an empty-but-healthy project are three distinct, clearly labelled states.
 
+## Install
+
+```bash
+paseo plugin add cuongntr/paseo-beads-viewer
+paseo plugin ls paseo-beads     # expect paseo-beads running
+```
+
+Update to the latest release with `paseo plugin update paseo-beads`. If the panel does not
+appear, `paseo plugin logs paseo-beads` shows why; the most common cause is `bv` missing from
+the daemon's `PATH`.
+
+To run a local checkout instead:
+
+```bash
+npm install && npm run typecheck && npm test
+paseo plugin install /absolute/path/to/paseo-beads
+```
+
+After editing source, run `paseo plugin reload paseo-beads`.
+
 ## Development
 
 ```bash
@@ -36,17 +56,6 @@ Mobile audit — a hit here is a bug:
 ```bash
 rg -n "document\.|window\.|localStorage|navigator\.|<[a-z]+[ >]|className=|onClick=" client/
 ```
-
-## Install
-
-```bash
-npm run typecheck && npm test
-paseo plugin install /absolute/path/to/paseo-beads
-paseo plugin ls        # expect paseo-beads running
-paseo plugin logs paseo-beads
-```
-
-After editing source, run `paseo plugin reload paseo-beads`.
 
 ## What it contributes
 

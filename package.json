@@ -1,7 +1,38 @@
 {
   "name": "paseo-beads",
-  "private": true,
   "version": "0.1.0",
+  "description": "Read-only Beads console for Paseo: project progress, ready and waiting work, the critical chain, and a whole-project board, read through bv.",
+  "license": "MIT",
+  "author": "cuongntr",
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "beads",
+    "bv",
+    "issue-tracker",
+    "kanban"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cuongntr/paseo-beads-viewer.git"
+  },
+  "homepage": "https://github.com/cuongntr/paseo-beads-viewer#readme",
+  "bugs": {
+    "url": "https://github.com/cuongntr/paseo-beads-viewer/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "client",
+    "server",
+    "shared",
+    "index.client.tsx",
+    "index.server.ts",
+    "README.md",
+    "paseo-plugin.json",
+    "LICENSE"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
