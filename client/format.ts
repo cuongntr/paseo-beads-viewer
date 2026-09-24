@@ -173,6 +173,27 @@ export function stateLabel(state: WorkState): string {
   }
 }
 
+/**
+ * What each state means, in Beads' own terms, shown under the column title so
+ * nobody has to guess. Ready and Waiting match `br ready` and `br blocked`.
+ */
+export function stateDescription(state: WorkState): string {
+  switch (state) {
+    case "ready":
+      return "Status open, and nothing it depends on is still open (br ready).";
+    case "waiting":
+      return "Status open, but a dependency, or its parent's, is still open (br blocked).";
+    case "active":
+      return "Status in_progress or hooked: someone has claimed it.";
+    case "held":
+      return "Status set by hand to blocked, deferred, draft or pinned.";
+    case "other":
+      return "A custom status Beads does not define, shown as written.";
+    case "done":
+      return "Status closed.";
+  }
+}
+
 export function stateIconName(state: WorkState): string {
   switch (state) {
     case "active":

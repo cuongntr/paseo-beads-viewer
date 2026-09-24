@@ -106,17 +106,23 @@ export interface PanelStyles {
   readonly boardHeader: ViewStyle;
   readonly boardHeaderStacked: ViewStyle;
   readonly boardControlRow: ViewStyle;
-  readonly boardContent: ViewStyle;
-  readonly boardColumnsRow: ViewStyle;
-  readonly boardColumnHeaderBand: ViewStyle;
+  readonly boardColumns: ViewStyle;
+  readonly boardColumn: ViewStyle;
+  readonly boardColumnHead: ViewStyle;
   readonly boardColumnHeader: ViewStyle;
-  readonly boardCell: ViewStyle;
-  readonly boardLaneStacked: ViewStyle;
-  readonly laneToggle: ViewStyle;
-  readonly laneTitleBlock: ViewStyle;
-  readonly laneTitle: TextStyle;
-  readonly laneProgressText: TextStyle;
-  readonly laneSummary: TextStyle;
+  readonly boardColumnHint: TextStyle;
+  readonly boardColumnTitle: TextStyle;
+  readonly boardColumnCount: TextStyle;
+  readonly boardColumnBody: ViewStyle;
+  readonly boardCardParent: TextStyle;
+  readonly filterScroll: ViewStyle;
+  readonly filterRow: ViewStyle;
+  readonly filterChip: ViewStyle;
+  readonly filterChipLabel: ViewStyle;
+  readonly filterChipSelected: ViewStyle;
+  readonly groupMeta: TextStyle;
+  readonly progressText: TextStyle;
+  readonly segmentItemGrow: ViewStyle;
   readonly segmentCaption: TextStyle;
   readonly segmentRow: ViewStyle;
   readonly segmentItem: ViewStyle;
@@ -145,10 +151,6 @@ export interface PanelStyles {
   readonly labelFacet: TextStyle;
   readonly labelRow: ViewStyle;
   readonly facetAccentText: TextStyle;
-  readonly boardLaneHeader: ViewStyle;
-  readonly boardLaneTitle: TextStyle;
-  readonly boardLaneCount: TextStyle;
-  readonly boardLaneBody: ViewStyle;
   readonly boardCard: ViewStyle;
   readonly boardCardSelected: ViewStyle;
   readonly boardCardRail: ViewStyle;
@@ -209,7 +211,7 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
       borderRightWidth: 1,
       borderRightColor: theme.colors.border,
     },
-    /** Board view: the lanes need the width, the inspector stays reachable. */
+    /** Board view: the columns need the width, the inspector stays reachable. */
     masterPaneWide: { flex: 7 },
     /** With no inspector beside it, the divider would sit on the panel edge. */
     masterPaneAlone: { borderRightWidth: 0 },
@@ -437,34 +439,44 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     },
     /** The board's own controls and its scope note share one line. */
     boardControlRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10 },
-    boardContent: { paddingHorizontal: gutter, paddingTop: 4, paddingBottom: gutter * 2, gap: 6 },
     /**
-     * Wide board: every lane's cells and the column header share one flex row
-     * shape, so the columns line up without a horizontal scroll region.
+     * Wide board: one flex column per state, each with its own vertical
+     * scroll, so a long column never pushes a short one out of view.
      */
-    boardColumnsRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-    boardColumnHeaderBand: {
-      paddingHorizontal: gutter,
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-    },
-    boardColumnHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
-    boardCell: { flex: 1, minWidth: 0, gap: 5 },
-    /** One lane: its header over its row of cells, or its stacked cards when compact. */
-    boardLaneStacked: {
-      gap: 6,
-      paddingTop: 8,
+    boardColumns: { flex: 1, flexDirection: "row", gap: 12, paddingHorizontal: gutter, paddingTop: 10 },
+    boardColumn: { flex: 1, minWidth: 0, gap: 8 },
+    boardColumnHead: {
+      gap: 3,
       paddingBottom: 6,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
     },
-    boardLaneHeader: { flexDirection: "row", alignItems: "center", gap: 8, paddingBottom: 2 },
-    laneToggle: { padding: 4, borderRadius: 3 },
-    laneTitleBlock: { flexShrink: 1, flexGrow: 1, minWidth: 0, gap: 1 },
-    laneTitle: { color: theme.colors.foreground, fontSize: 12, fontWeight: "700" },
-    laneProgressText: { color: theme.colors.foreground, fontSize: 11, fontWeight: "600", minWidth: 34, textAlign: "right" },
-    laneSummary: { color: theme.colors.foregroundMuted, fontSize: 10, flexShrink: 1, minWidth: 0 },
+    boardColumnHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
+    /** The state's definition, so a column's name never has to be guessed. */
+    boardColumnHint: { color: theme.colors.foregroundMuted, fontSize: 10, lineHeight: 14 },
+    boardColumnTitle: { color: theme.colors.foreground, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
+    boardColumnCount: { color: theme.colors.foregroundMuted, fontSize: 10 },
+    boardColumnBody: { gap: 6, paddingBottom: gutter * 2 },
+    filterScroll: { flexGrow: 1, flexShrink: 1, minWidth: 0 },
+    filterRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+    filterChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      maxWidth: 260,
+      minHeight: compact ? 34 : 26,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 4,
+    },
+    /** A project label reads as a label, so it keeps the label chip's fill. */
+    filterChipLabel: { backgroundColor: theme.colors.surface1 },
+    filterChipSelected: { backgroundColor: theme.colors.surface2, borderColor: theme.colors.accent },
+    /** Text beside a progress bar, and group metadata in the Overview. */
+    groupMeta: { color: theme.colors.foregroundMuted, fontSize: 10 },
+    progressText: { color: theme.colors.foreground, fontSize: 11, fontWeight: "600", minWidth: 34, textAlign: "right" },
     segmentCaption: { color: theme.colors.foregroundMuted, fontSize: 10, letterSpacing: 0.3 },
     /** Board controls are subordinate to the view tabs, so they are smaller and borderless until chosen. */
     segmentRow: {
@@ -481,6 +493,8 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
       paddingVertical: 4,
     },
     segmentItemSelected: { backgroundColor: theme.colors.surface2 },
+    /** Compact column picker: the states share the row evenly. */
+    segmentItemGrow: { flex: 1, alignItems: "center" },
     segmentLabel: { color: theme.colors.foregroundMuted, fontSize: 11 },
     segmentLabelSelected: { color: theme.colors.foreground, fontSize: 11, fontWeight: "600" },
     progressTrack: {
@@ -519,14 +533,6 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
       backgroundColor: theme.colors.surface2,
     },
     facetAccentText: { color: theme.colors.accent, fontSize: 10, fontWeight: "600" },
-    boardLaneTitle: {
-      color: theme.colors.foreground,
-      fontSize: 11,
-      fontWeight: "700",
-      letterSpacing: 0.4,
-    },
-    boardLaneCount: { color: theme.colors.foregroundMuted, fontSize: 10 },
-    boardLaneBody: { gap: 5 },
     boardCard: {
       flexDirection: "row",
       gap: 10,
@@ -543,6 +549,7 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     boardCardSelected: { backgroundColor: theme.colors.surface2, borderColor: theme.colors.accent },
     boardCardRail: { width: 3, alignSelf: "stretch" },
     boardCardBody: { flex: 1, gap: 4 },
+    boardCardParent: { color: theme.colors.foregroundMuted, fontSize: 10 },
     boardCardTitle: { color: theme.colors.foreground, fontSize: 12, lineHeight: 17, fontWeight: "600" },
     statusChip: { flexDirection: "row", alignItems: "center", gap: 4 },
     statusChipText: { color: theme.colors.foreground, fontSize: 10, fontWeight: "600" },

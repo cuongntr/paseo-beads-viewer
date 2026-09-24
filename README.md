@@ -119,15 +119,22 @@ After editing source, run `paseo plugin reload paseo-beads`.
   set aside as uninformative, and no label is given a meaning — so there is no built-in "needs a
   human". To keep agents off some work, use `bv`'s own `BV_ROBOT_NOT_READY_LABELS`, which the
   panel's `bv` reads inherit.
-- The **Board** lays out every piece of work `bv --robot-graph` reports in lanes by **Parent**
-  (the default), **Top level** (outermost parent), **None**, **Label**, or one `prefix:` label
-  family found in the project's labels, and columns by work state: In progress, Ready, Waiting,
-  Held and Other status (each only when non-empty), and Done (only with **Show done**). Issues
-  that other issues name as parent are lane headings and progress, never cards. Finished lanes
-  are hidden and counted, each lane and state renders at most 40 cards with the rest reported as
-  `+N more`, and a project past 2000 issues drops closed issues from the payload first and says
-  so. If the graph read fails, the panel falls back to the triage and plan working set and says
-  so. It is read-only: no drag, no drop, no status change.
+- Work states, in Beads' own terms (Ready and Waiting match `br ready` and `br blocked`):
+  **Ready** — status `open`, and nothing it depends on is still open. **Waiting** — status
+  `open`, but a dependency, or one of its parent's, is still open; a parent's dependency on its
+  own children does not count. **In progress** — `in_progress` or `hooked`. **Held** — status
+  set by hand to `blocked`, `deferred`, `draft` or `pinned`. **Other status** — a custom status.
+  **Done** — `closed`. Each Board column shows its definition under its title.
+- The **Board** is a plain board: one column per work state in the order work moves — Ready,
+  Waiting, In progress, Held and Other status (each only when non-empty), and Done (only with
+  **Show done**) — each column
+  one list that scrolls on its own, with no swimlanes. A **Filter** narrows every column at once
+  to one parent's subtree or one of the project's labels; each card names its parent. On a phone
+  the columns become a state picker over one list. Issues that other issues name as parent are
+  filter options and card context, never cards. Each column renders at most 60 cards with the
+  rest reported as `+N more`, and a project past 2000 issues drops closed issues from the payload
+  first and says so. If the graph read fails, the panel falls back to the triage and plan
+  working set and says so. It is read-only: no drag, no drop, no status change.
 - Issue prose renders through a bounded in-repo Markdown subset (headings h1–h3, lists, task
   items, quotes, rules, code, bold, italic, links). HTML, images, and tables are not rendered,
   and link targets are shown as text — the panel never opens a URL.

@@ -1,8 +1,8 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Pressable, Text, View } from "react-native";
 import type { ProjectHealth, Recommendation } from "../shared/beads";
-import { percentDone, toneColor } from "./format";
-import { workIn, type ProjectModel, type WorkPackage, type WorkRoot } from "./project";
+import { percentDone, stateDescription, toneColor } from "./format";
+import { workIn, type ProjectModel, type WorkPackage, type WorkRoot, type WorkState } from "./project";
 import { Empty, facetContext, ProgressBar, RecommendationRow, SectionHeader, WorkRow } from "./rows";
 import type { PanelStyles } from "./styles";
 
@@ -155,11 +155,18 @@ function Summary({
       : `${health.closedLast7Days} closed in the last 7 days${
           health.closedLast30Days == null ? "" : `, ${health.closedLast30Days} in 30`
         }${health.velocityEstimated ? " (bv estimate)" : ""}`;
-  const figures: readonly { readonly label: string; readonly value: number; readonly color: string }[] = [
-    { label: "in progress", value: counts.active, color: toneColor(theme, "accent") },
-    { label: "ready", value: counts.ready, color: toneColor(theme, "success") },
-    { label: "waiting", value: counts.waiting, color: theme.colors.foregroundMuted },
-    ...(counts.held === 0 ? [] : [{ label: "held", value: counts.held, color: toneColor(theme, "danger") }]),
+  const figures: readonly {
+    readonly label: string;
+    readonly value: number;
+    readonly color: string;
+    readonly state: WorkState;
+  }[] = [
+    { label: "ready", value: counts.ready, color: toneColor(theme, "success"), state: "ready" },
+    { label: "waiting", value: counts.waiting, color: theme.colors.foregroundMuted, state: "waiting" },
+    { label: "in progress", value: counts.active, color: toneColor(theme, "accent"), state: "active" },
+    ...(counts.held === 0
+      ? []
+      : [{ label: "held", value: counts.held, color: toneColor(theme, "danger"), state: "held" as const }]),
   ];
   return (
     <View style={styles.summaryBlock}>
@@ -172,7 +179,11 @@ function Summary({
       <ProgressBar styles={styles} theme={theme} done={counts.done} total={total} wide />
       <View style={styles.summaryFigures}>
         {figures.map((figure) => (
-          <View key={figure.label} style={styles.summaryFigure}>
+          <View
+            key={figure.label}
+            style={styles.summaryFigure}
+            accessibilityLabel={`${figure.value} ${figure.label}. ${stateDescription(figure.state)}`}
+          >
             <Text style={[styles.summaryFigureValue, { color: figure.value === 0 ? theme.colors.foregroundMuted : figure.color }]}>
               {figure.value}
             </Text>
@@ -180,6 +191,9 @@ function Summary({
           </View>
         ))}
       </View>
+      <Text style={styles.muted}>
+        Ready: {stateDescription("ready")} Waiting: {stateDescription("waiting")}
+      </Text>
       {pace === null ? null : <Text style={styles.muted}>{pace}</Text>}
       {project.truncated ? (
         <Text style={styles.muted}>Some closed issues were left out to bound the payload, so “done” undercounts.</Text>
@@ -319,9 +333,9 @@ function GroupRow({
   readonly onSelect: (issueId: string) => void;
 }) {
   const detail = [
-    counts.active === 0 ? null : `${counts.active} in progress`,
     counts.ready === 0 ? null : `${counts.ready} ready`,
     counts.waiting === 0 ? null : `${counts.waiting} waiting`,
+    counts.active === 0 ? null : `${counts.active} in progress`,
     counts.held === 0 ? null : `${counts.held} held`,
     done === total ? "all done" : null,
   ]
@@ -333,12 +347,12 @@ function GroupRow({
         <Text style={strong ? styles.groupTitleStrong : styles.groupTitle} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={styles.laneProgressText}>
+        <Text style={styles.progressText}>
           {done}/{total}
         </Text>
       </View>
       <ProgressBar styles={styles} theme={theme} done={done} total={total} wide />
-      <Text style={styles.boardLaneCount}>{[id, detail].filter((part) => part !== null && part.length > 0).join("  ·  ")}</Text>
+      <Text style={styles.groupMeta}>{[id, detail].filter((part) => part !== null && part.length > 0).join("  ·  ")}</Text>
     </>
   );
   if (id === null) return <View style={styles.groupRow}>{body}</View>;
@@ -432,7 +446,7 @@ function Labels({ styles, project }: { readonly styles: PanelStyles; readonly pr
           accessibilityLabel={`label ${stat.label}, ${stat.live} open, ${stat.ready} ready`}
         >
           <Text style={styles.labelFacet}>{stat.label}</Text>
-          <Text style={styles.boardLaneCount}>
+          <Text style={styles.groupMeta}>
             {stat.live} open{stat.ready === 0 ? "" : ` · ${stat.ready} ready`}
           </Text>
         </View>

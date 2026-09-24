@@ -17,7 +17,7 @@ import {
   takeDashboardRefresh,
   takeIssueFocus,
 } from "./focus";
-import { boardGroupings, buildBoard, type BoardGrouping } from "./board";
+import { ALL_WORK, buildBoard, type BoardFilter } from "./board";
 import { BoardView } from "./board-view";
 import { authorityLabel, authorityTone, errorLabel, relativeAge, toneColor } from "./format";
 import { OverviewView } from "./overview-view";
@@ -76,10 +76,10 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   const [queryText, setQueryText] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState<SubmittedQuery>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("overview");
-  // The board's own controls: how lanes are grouped, and whether finished work
+  // The board's own controls: what it is narrowed to, and whether finished work
   // is shown. Done work is hidden by default because a mature project buries
   // its live issues under closed ones.
-  const [boardGrouping, setBoardGrouping] = useState<BoardGrouping>("parent");
+  const [boardFilter, setBoardFilter] = useState<BoardFilter>(ALL_WORK);
   const [showDone, setShowDone] = useState(false);
 
   // Slash commands and Command Center actions may target the panel before it mounts.
@@ -170,9 +170,8 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   // Derived above every early return so hook order stays stable across states.
   const project = useMemo(() => projectFor(data), [data]);
   const boardModel = useMemo(
-    // A label family chosen on an earlier read may be gone from this one.
-    () => buildBoard(project, boardGroupings(project).includes(boardGrouping) ? boardGrouping : "parent", showDone),
-    [project, boardGrouping, showDone],
+    () => buildBoard(project, boardFilter, showDone),
+    [project, boardFilter, showDone],
   );
   const boardActive = submittedQuery === null && viewMode === "board";
 
@@ -191,9 +190,9 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
     const figures = project.complete
       ? [
           `${project.counts.done}/${project.work.length} done`,
-          `${project.counts.active} in progress`,
           `${project.counts.ready} ready`,
           `${project.counts.waiting} waiting`,
+          `${project.counts.active} in progress`,
           project.counts.held === 0 ? null : `${project.counts.held} held`,
         ]
       : counts === null
@@ -361,7 +360,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       compact={layout.compact}
       selectedId={selectedId}
       onSelect={setSelectedId}
-      onGroupingChange={setBoardGrouping}
+      onFilterChange={setBoardFilter}
       onShowDoneChange={setShowDone}
     />
   );

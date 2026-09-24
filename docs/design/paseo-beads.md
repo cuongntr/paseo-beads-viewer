@@ -26,7 +26,7 @@ client/ (Paseo app, React Native)      shared/ (both)              server/ (daem
 ─────────────────────────────────      ──────────────────          ───────────────────────────
 panel.tsx        TanStack Query UI     beads.ts  Zod types         dashboard.ts  triage+plan+alerts
 rows.tsx         priority-rail rows    rpc.ts    RPC contracts     search.ts     robot-search
-board.ts         lanes × state model             attachment source issue.ts      tracker show/list
+board.ts         columns + filter                attachment source issue.ts      tracker show/list
 board-view.tsx   read-only board                                  attachments.ts workspace fanout
 markdown.ts      bounded md parser                                tracker.ts    br vs bd identity
 markdown-view.tsx md renderer
@@ -177,21 +177,27 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   (plus `bd`'s `hooked`), and anything else is custom, declared in `.beads/policy.yaml`. So:
   built-in statuses map to work states and a custom status lands in `Other status`, shown
   verbatim; groups come only from parent links; labels are shown and counted as written, a label
-  on every open item is set aside because it distinguishes nothing, and `prefix:value` label
-  families are offered as board groupings only when the project's data has them. A project that
+  on every open item is set aside because it distinguishes nothing, and the board's filter
+  offers only the parents and labels the project's data has. A project that
   wants to keep agents off some work already has `bv`'s own `BV_ROBOT_NOT_READY_LABELS`.
 - **Groups follow parent links.** Work is grouped by its direct parent under its top-level
   ancestor, whatever a project calls those levels. Grouping straight to the top level, as the MVP
   did, put a real 28-issue project in one group. Groups sort by id with numbers compared
   numerically, so `x.2` precedes `x.10`; parentless work sinks to a catch-all. Walks up the
   parent chain stop on a cycle or an absent parent.
-- **The board is lanes × state.** Lanes are the chosen grouping (parent by default, top level,
-  none, every label, or one label family found in the data); columns are the derived state.
-  `Held` and `Other status` appear only when non-empty and `Done` only when the reader asks, since finished work is otherwise each lane's
-  progress; finished lanes are hidden and counted. On a wide panel every lane's cells share the
-  flex shape of one fixed column header, so columns line up without horizontal scrolling. Compact
-  stacks each lane's cards in state order and names the state on each card. A lane header opens
-  its container issue. There is no drag, drop, or mutation control.
+- **The board is a plain board: columns by state, grouping by filter.** One column per derived
+  state in the order work moves — Ready, Waiting (both not started), In progress, Held, Other
+  status, Done — each one list with its own scroll; `Held` and `Other status` appear only when non-empty
+  and `Done` only when the reader asks. Each column prints its definition under its title:
+  Ready and Waiting were checked issue for issue against `br ready` and `br blocked` on a real
+  project and match, containers aside. A first cut laid lanes (parent, label, …) across those
+  columns. In use that matrix left most cells empty, repeated a card in every label lane it
+  carried, and made the reader scan two ways at once — and it is not what boards do: GitHub
+  Projects, Linear and Jira all default to plain columns, with swimlanes an opt-in. So grouping
+  became a filter that narrows every column at once (a parent's whole subtree, or one of the
+  project's labels, with options discovered from the data), and every card names its direct
+  parent instead of sitting under it. Compact turns the columns into a state picker over one
+  list. There is no drag, drop, or mutation control.
 - **Edge direction is data, not intuition.** `bv --robot-graph` emits `blocks` as `from` → `to`
   meaning from-is-blocked-by-to, but `parent-child` as child → parent. Both were established by
   cross-checking `br show --json` on real repositories, after reading them the same way produced a
@@ -200,8 +206,8 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
 - **The board bounds itself out loud.** `BOARD_ISSUE_LIMIT` (2000, ~553 KB at a measured 283 B per
   issue with the type/assignee overlay) drops closed issues first so open work is never the part
   that goes missing, then keeps closed ancestors of open work so grouping survives, and the
-  status line and Overview say closed issues were left out; `BOARD_CELL_CARD_LIMIT`
-  (40) caps cards per lane and state and reports the remainder as `+N more`.
+  status line and Overview say closed issues were left out; `BOARD_COLUMN_CARD_LIMIT`
+  (60) caps cards per column and reports the remainder as `+N more`.
 - **Work state owns the colour channel.** Every work row and card is a 3 px rail coloured by state
   (in progress accent, ready success, held danger, waiting and done neutral, all from
   `theme.colors`). The MVP gave the channel to priority; on a project where every issue is P1 that
@@ -213,8 +219,8 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   type and priority only when open work differs in them, up to three of the project's labels as
   written (leaving out any label every open item carries), the open blockers by id ("waits on
   x, y +2"), and how many open issues it unblocks. Accessibility labels keep every fact.
-- **The status line reports the project, then freshness.** `done/total · in progress · ready ·
-  waiting · held · read Ns ago`. Source provenance (`complete · proven · fresh`) is a diagnostic,
+- **The status line reports the project, then freshness.** `done/total · ready · waiting · in
+  progress · held · read Ns ago`. Source provenance (`complete · proven · fresh`) is a diagnostic,
   so it appears only when the source is not healthy; the header rail colour carries it otherwise.
 - **Risks count only what needs a decision.** Stuck work (held by a `blocked`-like status, not
   deliberately `deferred`), a dependency cycle, and critical or warning alerts. The badge is `—`
@@ -230,9 +236,9 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
 - Workspace panel at `workspace` and `explorer` locations, with refresh.
 - An Overview of progress per top-level issue and parent, work by derived state, the project's
   labels over open work, and the critical chain; execution tracks; held work, cycles, alerts, and keystones.
-- A read-only whole-project `Board` of lanes (parent, top level, none, or discovered labels) by derived work
-  state, sourced from `bv --robot-graph` plus the tracker's type/assignee CSV, with finished lanes
-  hidden and a bounded payload.
+- A read-only whole-project `Board` with one column per derived work state and a filter by parent
+  or label, sourced from `bv --robot-graph` plus the tracker's type/assignee CSV, with a bounded
+  payload.
 - Bounded issue search and selectable issue detail, with issue prose and comments rendered through
   the bounded Markdown subset.
 - Composer attachment source for Beads issues across recent workspaces.
@@ -269,7 +275,7 @@ All tests run without a Beads repository. `bv` and the tracker CLIs are never re
 | Client presentation (`tests/format.test.ts`) | Authority tone and label across complete/partial/failed/not-claim-safe sources; priority tone mapping; Lucide status icon and status label mapping including unknown values; status and severity tone mapping; relative age; distinct message per error code. |
 | Markdown subset (`tests/markdown.test.ts`) | Block and inline parsing for every supported construct; malformed and unclosed emphasis, code, links, and fences degrading to plain text; adversarial marker soup proven not to throw; character, line, block, code-line, inline-segment, and nesting bounds asserted against the exported constants. |
 | Project model (`tests/project.test.ts`) | Work state from status and open blockers, built-in statuses only, custom statuses kept apart, tombstones dropped; containers excluded from work and counts; labels counted as written with common labels set aside; parent and top-level grouping with numeric id order and a sinking catch-all; settled groups; cyclic parent chains; critical chain order, tie-break stability, cycles, and a 5000-step chain without stack overflow; ranking order; triage and plan enrichment; working-set fallback. |
-| Board layout (`tests/board.test.ts`) | Columns by derived state with conditional held/done; containers never carded; a column for custom statuses; parent, top-level, none, and discovered label-family lanes (multi-label); finished lanes hidden and counted; per-cell caps. |
+| Board layout (`tests/board.test.ts`) | Columns by derived state with conditional held, other and done; every work item in exactly one column and containers never carded; project order within a column; per-column caps; filter options discovered from parents and labels; subtree, parent and label filtering; fallback when a filter no longer matches; each card's parent context. |
 
 Verification gate before install: `npm run typecheck`, `npm test`, and the `client/` mobile
 audit with no hits.

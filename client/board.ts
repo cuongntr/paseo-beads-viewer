@@ -1,215 +1,160 @@
 /**
- * Board layout for the read-only project board.
+ * Board layout for the read-only project board: a plain board, one column per
+ * derived {@link WorkState}, each column one continuous list.
  *
- * Columns are the derived {@link WorkState}, not the raw status: on a real
- * project every live issue had status `open`, so a status board was one column
- * of 27 cards that could not tell ready work from work waiting on three others.
- * Lanes are the grouping the reader picks, by default the direct parent, which
- * is how a Beads plan nests its work whatever the project calls its levels.
+ * Columns are the derived state, not the raw status: on a real project every
+ * live issue had status `open`, so a status board was one column of 27 cards
+ * that could not tell ready work from work waiting on three others.
  *
- * Only work is carded. A container is its lane's heading and progress, never a
- * card beside its own tasks. Everything is pure for the Vitest node environment.
+ * Grouping is a filter, not swimlanes. A lanes × columns matrix left most cells
+ * empty, repeated a card in every label lane it carried, and made the reader
+ * scan two ways at once; the usual boards (GitHub Projects, Linear, Jira) keep
+ * swimlanes off by default for the same reasons. Each card names its parent
+ * instead, and choosing a parent or a label narrows every column at once.
+ *
+ * Only work is carded; a container is a filter option and a card's context.
+ * Everything is pure for the Vitest node environment.
  */
-import {
-  compareIds,
-  countStates,
-  labelNamespace,
-  LOOSE_KEY,
-  WORK_STATES,
-  type ProjectModel,
-  type StateCounts,
-  type WorkItem,
-  type WorkState,
-} from "./project";
+import { countStates, WORK_STATES, type ProjectModel, type StateCounts, type WorkItem, type WorkState } from "./project";
 
-/**
- * How the board divides work into lanes. `parent` and `root` follow parent
- * links; `labels` puts work under each label it carries; `ns:<prefix>` does the
- * same for one `prefix:value` label family. Label groupings are discovered from
- * the project's own labels, never from a fixed list.
- */
-export type BoardGrouping = "parent" | "root" | "none" | "labels" | `ns:${string}`;
+/** What the board is narrowed to: everything, one parent's subtree, or one label. */
+export type BoardFilter =
+  | { readonly kind: "all" }
+  | { readonly kind: "parent"; readonly id: string }
+  | { readonly kind: "label"; readonly label: string };
 
-/** Groupings this project's data supports, in the order they are offered. */
-export function boardGroupings(project: ProjectModel): readonly BoardGrouping[] {
-  const groupings: BoardGrouping[] = ["parent", "root", "none"];
-  if (project.labels.length > 0) groupings.push("labels");
-  for (const namespace of project.labelNamespaces) groupings.push(`ns:${namespace}`);
-  return groupings;
+export const ALL_WORK: BoardFilter = { kind: "all" };
+
+export interface BoardFilterOption {
+  readonly key: string;
+  readonly filter: BoardFilter;
+  readonly label: string;
+  /** Unfinished work the option would show. */
+  readonly live: number;
+  /** Nesting depth for parents: 0 for a top-level issue. */
+  readonly depth: number;
 }
 
-/**
- * Cards rendered per cell. The lane header keeps the true count, and the view
- * reports the rest as "+N more".
- */
-export const BOARD_CELL_CARD_LIMIT = 40;
+/** Cards rendered per column before the rest is reported as "+N more". */
+export const BOARD_COLUMN_CARD_LIMIT = 60;
 
-export interface BoardCell {
+export interface BoardColumn {
+  readonly state: WorkState;
   readonly cards: readonly WorkItem[];
   readonly total: number;
   readonly hidden: number;
 }
 
-export interface BoardLane {
-  readonly key: string;
-  readonly label: string;
-  /** The container issue heading this lane, when there is one to open. */
-  readonly headerId: string | null;
-  /** The outermost container, shown under a package lane when it differs. */
-  readonly context: string | null;
-  readonly cells: Readonly<Record<WorkState, BoardCell>>;
-  readonly counts: StateCounts;
-  readonly done: number;
-  readonly total: number;
-  /** True when every item in the lane is done. */
-  readonly settled: boolean;
-}
-
 export interface BoardModel {
-  readonly grouping: BoardGrouping;
-  /** Lanes to render; settled lanes are dropped unless done work is shown. */
-  readonly lanes: readonly BoardLane[];
+  /** The filter applied, which falls back to all work when the chosen one no longer matches. */
+  readonly filter: BoardFilter;
   /** Columns to render, in {@link WORK_STATES} order. */
-  readonly columns: readonly WorkState[];
-  /** Work per state across the whole board. */
+  readonly columns: readonly BoardColumn[];
+  /** Work per state under the filter. */
   readonly counts: StateCounts;
-  /** Settled lanes left out because done work is hidden. */
-  readonly settledHidden: number;
   readonly showDone: boolean;
 }
 
-export function buildBoard(project: ProjectModel, grouping: BoardGrouping, showDone: boolean): BoardModel {
-  const buckets = new Map<string, { slot: LaneSlot; items: WorkItem[] }>();
-  for (const item of project.work) {
-    for (const slot of slotsFor(item, grouping, project)) {
-      const bucket = buckets.get(slot.key);
-      if (bucket === undefined) buckets.set(slot.key, { slot, items: [item] });
-      else bucket.items.push(item);
+export function filterKey(filter: BoardFilter): string {
+  switch (filter.kind) {
+    case "all":
+      return "all";
+    case "parent":
+      return `parent:${filter.id}`;
+    case "label":
+      return `label:${filter.label}`;
+  }
+}
+
+/**
+ * Filters this project's data supports: every parent that still has open
+ * work, nested under its top-level issue in plan order, then the project's own
+ * labels, most used first. Nothing here comes from a fixed list.
+ */
+export function boardFilters(project: ProjectModel): readonly BoardFilterOption[] {
+  const options: BoardFilterOption[] = [
+    {
+      key: "all",
+      filter: ALL_WORK,
+      label: "All work",
+      live: project.work.length - project.counts.done,
+      depth: 0,
+    },
+  ];
+  for (const root of project.roots) {
+    if (root.id === null || root.settled) continue;
+    options.push(parentOption(root.id, root.title, root.total - root.done, 0));
+    for (const pkg of root.packages) {
+      if (pkg.id === null || pkg.id === root.id || pkg.settled) continue;
+      options.push(parentOption(pkg.id, pkg.title, pkg.total - pkg.done, 1));
     }
   }
+  for (const stat of project.labels) {
+    const filter: BoardFilter = { kind: "label", label: stat.label };
+    options.push({ key: filterKey(filter), filter, label: stat.label, live: stat.live, depth: 0 });
+  }
+  return options;
+}
 
-  const all = [...buckets.values()]
-    .map(({ slot, items }) => finishLane(slot, items))
-    .sort(compareLanes);
-  const lanes = showDone ? all : all.filter((lane) => !lane.settled);
-  const counts = countStates(project.work);
+function parentOption(id: string, title: string, live: number, depth: number): BoardFilterOption {
+  const filter: BoardFilter = { kind: "parent", id };
+  return { key: filterKey(filter), filter, label: title, live, depth };
+}
+
+export function buildBoard(project: ProjectModel, filter: BoardFilter, showDone: boolean): BoardModel {
+  // A filter chosen on an earlier read may have nothing left to match.
+  const known = boardFilters(project).some((option) => option.key === filterKey(filter));
+  const active = known ? filter : ALL_WORK;
+  const items = project.work.filter((item) => matches(item, active, project));
+  const counts = countStates(items);
 
   // Held and other statuses are exceptions, so their columns appear only when
-  // something is in them. Done is a column only on request; otherwise it is
-  // each lane's progress.
-  const columns = WORK_STATES.filter((state) => {
+  // something is in them. Done is a column only on request.
+  const states = WORK_STATES.filter((state) => {
     if (state === "held") return counts.held > 0;
     if (state === "other") return counts.other > 0;
     if (state === "done") return showDone;
     return true;
   });
 
-  return {
-    grouping,
-    lanes,
-    columns,
-    counts,
-    settledHidden: all.length - lanes.length,
-    showDone,
-  };
-}
-
-interface LaneSlot {
-  readonly key: string;
-  readonly label: string;
-  readonly headerId: string | null;
-  readonly context: string | null;
-  /** Sort key: containers by id, features by name, catch-alls last. */
-  readonly order: string | null;
-}
-
-/**
- * Which lanes an item belongs to. Label groupings can return several: an issue
- * carrying two labels genuinely belongs to both lanes.
- */
-function slotsFor(item: WorkItem, grouping: BoardGrouping, project: ProjectModel): readonly LaneSlot[] {
-  if (grouping === "none") {
-    return [{ key: "all", label: "All work", headerId: null, context: null, order: "" }];
-  }
-  if (grouping === "parent" || grouping === "root") {
-    const parent = item.parentId === null ? undefined : project.byId.get(item.parentId);
-    if (parent === undefined) return [catchAll("No parent")];
-    const root = outermost(parent, project);
-    const lane = grouping === "parent" ? parent : root;
-    return [
-      {
-        key: lane.id,
-        label: lane.title,
-        headerId: lane.id,
-        context: grouping === "parent" && root.id !== parent.id ? root.id : null,
-        order: lane.id,
-      },
-    ];
-  }
-  const labels = [...new Set(item.labels)].filter((label) => {
-    if (grouping === "labels") return !project.commonLabels.has(label);
-    return labelNamespace(label) === grouping.slice("ns:".length);
-  });
-  if (labels.length === 0) return [catchAll(grouping === "labels" ? "No label" : `No ${grouping.slice(3)}: label`)];
-  return labels.map((label) => ({
-    key: label,
-    label: grouping === "labels" ? label : label.slice(grouping.length - 2),
-    headerId: null,
-    context: null,
-    order: label,
-  }));
-}
-
-function catchAll(label: string): LaneSlot {
-  return { key: `${LOOSE_KEY}:${label}`, label, headerId: null, context: null, order: null };
-}
-
-function outermost(container: WorkItem, project: ProjectModel): WorkItem {
-  let current = container;
-  const visited = new Set<string>([container.id]);
-  while (current.parentId !== null && !visited.has(current.parentId)) {
-    visited.add(current.parentId);
-    const parent = project.byId.get(current.parentId);
-    if (parent === undefined) break;
-    current = parent;
-  }
-  return current;
-}
-
-function finishLane(slot: LaneSlot, items: readonly WorkItem[]): BoardLane & { readonly order: string | null } {
-  const counts = countStates(items);
-  const cells = {} as Record<WorkState, BoardCell>;
-  for (const state of WORK_STATES) {
-    // Items arrive in project order, which is already the in-cell order.
+  const columns = states.map((state) => {
+    // Work arrives in project order, which is already the in-column order.
     const inState = items.filter((item) => item.state === state);
-    cells[state] = {
-      cards: inState.slice(0, BOARD_CELL_CARD_LIMIT),
+    return {
+      state,
+      cards: inState.slice(0, BOARD_COLUMN_CARD_LIMIT),
       total: inState.length,
-      hidden: Math.max(0, inState.length - BOARD_CELL_CARD_LIMIT),
+      hidden: Math.max(0, inState.length - BOARD_COLUMN_CARD_LIMIT),
     };
-  }
-  return {
-    key: slot.key,
-    label: slot.label,
-    headerId: slot.headerId,
-    context: slot.context,
-    order: slot.order,
-    cells,
-    counts,
-    done: counts.done,
-    total: items.length,
-    settled: counts.done === items.length,
-  };
+  });
+
+  return { filter: active, columns, counts, showDone };
 }
 
-/** Plan order by id, numbers compared as numbers; catch-all lanes sink. */
-function compareLanes(
-  left: { readonly order: string | null; readonly key: string },
-  right: { readonly order: string | null; readonly key: string },
-): number {
-  if (left.order === null || right.order === null) {
-    if (left.order === right.order) return left.key.localeCompare(right.key);
-    return left.order === null ? 1 : -1;
+function matches(item: WorkItem, filter: BoardFilter, project: ProjectModel): boolean {
+  switch (filter.kind) {
+    case "all":
+      return true;
+    case "label":
+      return item.labels.includes(filter.label);
+    case "parent":
+      return hasAncestor(item, filter.id, project);
   }
-  return compareIds(left.order, right.order);
+}
+
+/** True when `id` is on the item's parent chain; a cyclic chain ends the walk. */
+function hasAncestor(item: WorkItem, id: string, project: ProjectModel): boolean {
+  const visited = new Set<string>([item.id]);
+  for (let parent = item.parentId; parent !== null && !visited.has(parent); ) {
+    if (parent === id) return true;
+    visited.add(parent);
+    parent = project.byId.get(parent)?.parentId ?? null;
+  }
+  return false;
+}
+
+/** A card's context line: its direct parent's title, or its id when the parent is not loaded. */
+export function parentLabel(item: WorkItem, project: ProjectModel): string | null {
+  if (item.parentId === null) return null;
+  return project.byId.get(item.parentId)?.title ?? item.parentId;
 }

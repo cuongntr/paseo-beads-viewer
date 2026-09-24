@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProject, compareIds, labelNamespace, workIn, workStateOf } from "../client/project";
+import { buildProject, compareIds, workIn, workStateOf } from "../client/project";
 import type { Recommendation, Track } from "../shared/beads";
 import { issue, plannedProject, project } from "./work-fixtures";
 
@@ -123,14 +123,6 @@ describe("work and containers", () => {
       { label: "human-approval", live: 1, ready: 1 },
       { label: "stack:be", live: 1, ready: 1 },
     ]);
-    expect(model.labelNamespaces).toEqual(["stack"]);
-  });
-
-  it("reads a namespace only from a prefix:value label", () => {
-    expect(labelNamespace("stack:ops")).toBe("stack");
-    expect(labelNamespace("human-approval")).toBeNull();
-    expect(labelNamespace(":x")).toBeNull();
-    expect(labelNamespace("x:")).toBeNull();
   });
 
   it("reports whether type varies across live work", () => {
@@ -321,15 +313,5 @@ describe("working-set fallback", () => {
     expect(model.byId.has("ignored")).toBe(false);
     expect(model.byId.get("r")?.state).toBe("waiting");
     expect(model.byId.get("t")?.state).toBe("ready");
-  });
-});
-
-describe("label families", () => {
-  it("offers no family whose only label sits on every open item", () => {
-    const model = project([
-      issue({ id: "a", labels: ["feature:one", "stack:be"] }),
-      issue({ id: "b", labels: ["feature:one", "stack:fe"] }),
-    ]);
-    expect(model.labelNamespaces).toEqual(["stack"]);
   });
 });

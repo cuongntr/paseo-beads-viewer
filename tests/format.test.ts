@@ -11,6 +11,7 @@ import {
   shortHash,
   statusIconName,
   statusLabel,
+  stateDescription,
   stateTone,
   toneColor,
 } from "../client/format";
@@ -79,6 +80,12 @@ describe("authority presentation", () => {
 });
 
 describe("status and severity tones", () => {
+  it("defines every work state in Beads' own terms", () => {
+    expect(stateDescription("ready")).toContain("br ready");
+    expect(stateDescription("waiting")).toContain("br blocked");
+    expect(stateDescription("held")).toContain("blocked, deferred, draft or pinned");
+  });
+
   it("colours derived work state, marking a custom status as an exception", () => {
     expect(stateTone("active")).toBe("accent");
     expect(stateTone("ready")).toBe("success");

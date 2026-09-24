@@ -29,8 +29,12 @@ import { BEADS_STATUSES, isClosedStatus, type BoardIssue, type Recommendation, t
  */
 export type WorkState = "active" | "ready" | "waiting" | "held" | "other" | "done";
 
-/** Reading order: moving, can start, cannot start, parked, unknown to Beads, finished. */
-export const WORK_STATES: readonly WorkState[] = ["active", "ready", "waiting", "held", "other", "done"];
+/**
+ * The order work moves through, which is the board's column order: not started
+ * (ready, then waiting on something), in progress, held, a status Beads does
+ * not define, and finished.
+ */
+export const WORK_STATES: readonly WorkState[] = ["ready", "waiting", "active", "held", "other", "done"];
 
 /** Claimed and being worked on. */
 const ACTIVE_STATUSES: readonly string[] = [BEADS_STATUSES.inProgress, BEADS_STATUSES.hooked];
@@ -150,8 +154,6 @@ export interface ProjectModel {
   readonly commonLabels: ReadonlySet<string>;
   /** Every other label on live work, most used first. */
   readonly labels: readonly LabelStat[];
-  /** Prefixes of `prefix:value` labels on live work, most used first. */
-  readonly labelNamespaces: readonly string[];
 }
 
 /** How much live work carries one label, and how much of that can start. */
@@ -170,7 +172,7 @@ export interface ProjectInput {
 }
 
 /** Group key for work with no parent. */
-export const LOOSE_KEY = "\u0000loose";
+const LOOSE_KEY = "\u0000loose";
 
 export function buildProject(input: ProjectInput): ProjectModel {
   const recommendations = new Map<string, Recommendation>();
@@ -579,7 +581,7 @@ export function workIn(project: ProjectModel, state: WorkState): readonly WorkIt
  * project where one label marks everything, it would otherwise head every list
  * while distinguishing nothing.
  */
-function labelsOf(live: readonly WorkItem[]): Pick<ProjectModel, "commonLabels" | "labels" | "labelNamespaces"> {
+function labelsOf(live: readonly WorkItem[]): Pick<ProjectModel, "commonLabels" | "labels"> {
   const stats = new Map<string, { live: number; ready: number }>();
   for (const item of live) {
     for (const label of new Set(item.labels)) {
@@ -597,20 +599,5 @@ function labelsOf(live: readonly WorkItem[]): Pick<ProjectModel, "commonLabels" 
   }
   labels.sort((left, right) => right.live - left.live || compareIds(left.label, right.label));
 
-  // A family whose only label is on everything would group into one lane.
-  const namespaces = new Map<string, number>();
-  for (const { label, live: count } of labels) {
-    const namespace = labelNamespace(label);
-    if (namespace !== null) namespaces.set(namespace, (namespaces.get(namespace) ?? 0) + count);
-  }
-  const labelNamespaces = [...namespaces.entries()]
-    .sort((left, right) => right[1] - left[1] || compareIds(left[0], right[0]))
-    .map(([namespace]) => namespace);
-  return { commonLabels: common, labels, labelNamespaces };
-}
-
-/** The part before the first `:` of a `prefix:value` label, or null for a plain label. */
-export function labelNamespace(label: string): string | null {
-  const index = label.indexOf(":");
-  return index > 0 && index < label.length - 1 ? label.slice(0, index) : null;
+  return { commonLabels: common, labels };
 }
