@@ -316,7 +316,7 @@ export const IssueIdSchema = z
   .max(ISSUE_ID_MAX_LENGTH)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "Beads issue ids are alphanumeric with . _ -");
 
-export const ATTACHMENT_URL_SCHEME = "paseo-beads:";
+export const ATTACHMENT_URL_SCHEME = "beads-viewer:";
 export const ATTACHMENT_RESOURCE_TYPE = "beads_issue";
 
 /** Stable, parseable identity for an issue inside one Paseo workspace. */

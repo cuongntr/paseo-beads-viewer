@@ -1,5 +1,5 @@
 {
-  "id": "paseo-beads",
+  "id": "beads-viewer",
   "requirements": {
     "paseo": ">=0.8.0"
   }

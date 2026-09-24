@@ -9,7 +9,7 @@ const PANEL_ID = "beads";
 export default function contribute(client: PluginClientContext) {
   client.addWorkspacePanel({
     id: PANEL_ID,
-    title: "Beads",
+    title: "Beads Viewer",
     icon: "GitFork",
     context: "workspace",
     locations: ["workspace", "explorer"],
@@ -18,7 +18,7 @@ export default function contribute(client: PluginClientContext) {
 
   client.addCommandCenterItem({
     id: "beads-open",
-    title: "Open Beads",
+    title: "Open Beads Viewer",
     icon: "GitFork",
     keywords: ["beads", "issues", "dependencies", "triage", "ready"],
     context: "workspace",
@@ -29,7 +29,7 @@ export default function contribute(client: PluginClientContext) {
 
   client.addCommandCenterItem({
     id: "beads-refresh-triage",
-    title: "Refresh Beads triage",
+    title: "Refresh Beads Viewer",
     icon: "RefreshCw",
     keywords: ["beads", "triage", "refresh", "bv"],
     context: "workspace",

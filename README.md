@@ -1,4 +1,4 @@
-# paseo-beads
+# beads-viewer
 
 A read-only Beads console for Paseo workspaces. For the workspace you are in it shows how far
 along the project is per parent issue, what is in progress, what can start now, how the project's
@@ -49,21 +49,25 @@ and an empty-but-healthy project are three distinct, clearly labelled states.
 
 ```bash
 paseo plugin add cuongntr/paseo-beads-viewer
-paseo plugin ls paseo-beads     # expect paseo-beads running
+paseo plugin ls beads-viewer    # expect beads-viewer running
 ```
 
-Update to the latest release with `paseo plugin update paseo-beads`. If the panel does not
-appear, `paseo plugin logs paseo-beads` shows why; the most common cause is `bv` missing from
+Update to the latest release with `paseo plugin update beads-viewer`. If the panel does not
+appear, `paseo plugin logs beads-viewer` shows why; the most common cause is `bv` missing from
 the daemon's `PATH`.
+
+Releases before 0.2.0 used the plugin id `paseo-beads` and the npm package `paseo-beads`. That id
+belongs to another plugin on paseo.cafe, so this one is now `beads-viewer`. If you installed an
+earlier release, remove it first with `paseo plugin remove paseo-beads`.
 
 To run a local checkout instead:
 
 ```bash
 npm install && npm run typecheck && npm test
-paseo plugin install /absolute/path/to/paseo-beads
+paseo plugin install /absolute/path/to/paseo-beads-viewer
 ```
 
-After editing source, run `paseo plugin reload paseo-beads`.
+After editing source, run `paseo plugin reload beads-viewer`.
 
 ## Development
 
@@ -83,9 +87,9 @@ rg -n "document\.|window\.|localStorage|navigator\.|<[a-z]+[ >]|className=|onCli
 
 | Contribution | Where |
 | --- | --- |
-| Workspace panel `beads` ("Beads") | Workspace tab bar and the Explorer |
-| Command Center: **Open Beads** | Workspace context |
-| Command Center: **Refresh Beads triage** | Workspace context; re-reads `bv` then opens the panel |
+| Workspace panel `beads` ("Beads Viewer") | Workspace tab bar and the Explorer |
+| Command Center: **Open Beads Viewer** | Workspace context |
+| Command Center: **Refresh Beads Viewer** | Workspace context; re-reads `bv` then opens the panel |
 | Slash command `/beads` | Opens the panel for the current workspace |
 | Slash command `/bead <issue-id>` | Opens the panel with that issue selected |
 | Attachment source **Beads issue** | Composer attachment picker |

@@ -227,7 +227,7 @@ describe("attachment handler", () => {
 
     const first = result.items[0];
     expect(first).toBeDefined();
-    expect(first?.url).toMatch(/^paseo-beads:\/\/workspace\/ws-beads\/issue\//);
+    expect(first?.url).toMatch(/^beads-viewer:\/\/workspace\/ws-beads\/issue\//);
     expect(first?.resourceType).toBe("beads_issue");
     expect(first?.subtitle).toContain("repo");
     expect(first?.text).toContain("Paseo workspace: repo");

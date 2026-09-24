@@ -1,4 +1,7 @@
-# Technical Design: paseo-beads (read-only MVP)
+# Technical Design: beads-viewer (read-only MVP)
+
+> The plugin shipped as `paseo-beads` until 0.2.0. That id already belonged to another plugin on
+> paseo.cafe, so the plugin id, npm package and attachment URL scheme are now `beads-viewer`.
 
 ## Routing Decision
 

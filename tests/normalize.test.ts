@@ -315,7 +315,7 @@ describe("attachment snapshot", () => {
 
   it("builds a parseable, stable issue url", () => {
     const url = buildIssueUrl("ws 1", "pib-1");
-    expect(url).toBe("paseo-beads://workspace/ws%201/issue/pib-1");
+    expect(url).toBe("beads-viewer://workspace/ws%201/issue/pib-1");
     expect(buildIssueUrl("ws 1", "pib-1")).toBe(url);
   });
 });
