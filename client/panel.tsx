@@ -17,7 +17,7 @@ import {
   takeDashboardRefresh,
   takeIssueFocus,
 } from "./focus";
-import { buildBoard, type BoardGrouping } from "./board";
+import { boardGroupings, buildBoard, type BoardGrouping } from "./board";
 import { BoardView } from "./board-view";
 import { authorityLabel, authorityTone, errorLabel, relativeAge, toneColor } from "./format";
 import { OverviewView } from "./overview-view";
@@ -29,6 +29,7 @@ import {
   IssueDetailView,
   SearchResultRow,
   SectionHeader,
+  facetContext,
   TrackBlock,
   WorkRow,
 } from "./rows";
@@ -78,7 +79,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   // The board's own controls: how lanes are grouped, and whether finished work
   // is shown. Done work is hidden by default because a mature project buries
   // its live issues under closed ones.
-  const [boardGrouping, setBoardGrouping] = useState<BoardGrouping>("package");
+  const [boardGrouping, setBoardGrouping] = useState<BoardGrouping>("parent");
   const [showDone, setShowDone] = useState(false);
 
   // Slash commands and Command Center actions may target the panel before it mounts.
@@ -169,7 +170,8 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   // Derived above every early return so hook order stays stable across states.
   const project = useMemo(() => projectFor(data), [data]);
   const boardModel = useMemo(
-    () => buildBoard(project, boardGrouping, showDone),
+    // A label family chosen on an earlier read may be gone from this one.
+    () => buildBoard(project, boardGroupings(project).includes(boardGrouping) ? boardGrouping : "parent", showDone),
     [project, boardGrouping, showDone],
   );
   const boardActive = submittedQuery === null && viewMode === "board";
@@ -792,7 +794,7 @@ function RisksView({
               theme={theme}
               item={item}
               showState
-              showPriority={project.priorityVaries}
+              context={facetContext(project)}
               selected={selectedId === item.id}
               onSelect={onSelect}
             />

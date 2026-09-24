@@ -19,7 +19,7 @@ import {
   type Tone,
 } from "./format";
 import { MarkdownView } from "./markdown-view";
-import type { WorkItem, WorkState } from "./project";
+import type { ProjectModel, WorkItem, WorkState } from "./project";
 import type { PanelStyles } from "./styles";
 
 interface Common {
@@ -178,35 +178,61 @@ export function WorkStateFacet({ styles, theme, state }: Common & { state: WorkS
 const PLAIN_STATUSES: readonly string[] = ["open", "in_progress", "closed"];
 
 /**
- * The facets that tell one piece of work from another. Everything shared by
- * the whole project (one priority, the type "task") is left out, and the
- * exceptions a reader acts on — a person must act, the critical chain, what it
- * waits on — are named.
+ * What the whole project has in common, so a facet row can leave it out: a
+ * priority, type or label that every live item shares tells nothing apart.
+ */
+export interface FacetContext {
+  readonly showPriority: boolean;
+  readonly showType: boolean;
+  readonly commonLabels: ReadonlySet<string>;
+}
+
+export function facetContext(project: ProjectModel): FacetContext {
+  return {
+    showPriority: project.priorityVaries,
+    showType: project.typeVaries,
+    commonLabels: project.commonLabels,
+  };
+}
+
+/** Labels shown per row before the rest is summarised as `+N`. */
+const ROW_LABEL_LIMIT = 3;
+
+/**
+ * The facets that tell one piece of work from another. Whatever the whole
+ * project shares is left out. Labels are the project's own vocabulary, so they
+ * appear exactly as written and are never interpreted.
  */
 export function WorkFacets({
   styles,
   theme,
   item,
   showState,
-  showPriority,
-}: Common & { item: WorkItem; showState: boolean; showPriority: boolean }) {
+  context,
+}: Common & { item: WorkItem; showState: boolean; context: FacetContext }) {
   const rawStatus = item.status.trim().toLowerCase();
+  const labels = [...new Set(item.labels)].filter((label) => !context.commonLabels.has(label));
   return (
     <>
       <IdentFacet styles={styles} theme={theme} id={item.id} />
       {showState ? <WorkStateFacet styles={styles} theme={theme} state={item.state} /> : null}
-      {showPriority ? <PriorityFacet styles={styles} theme={theme} priority={item.priority} /> : null}
+      {context.showPriority ? <PriorityFacet styles={styles} theme={theme} priority={item.priority} /> : null}
       <Facet
         styles={styles}
         theme={theme}
         value={PLAIN_STATUSES.includes(rawStatus) ? null : statusLabel(item.status)}
       />
       <Facet styles={styles} theme={theme} value={item.assignee === null ? null : `@${item.assignee}`} />
-      {item.attention && item.state !== "done" ? (
-        <Text style={styles.facetWarningText}>needs a human</Text>
-      ) : null}
       {item.critical ? <Text style={styles.facetAccentText}>critical chain</Text> : null}
-      <Facet styles={styles} theme={theme} value={item.type === "bug" ? "bug" : null} />
+      <Facet styles={styles} theme={theme} value={context.showType ? item.type : null} />
+      {labels.slice(0, ROW_LABEL_LIMIT).map((label) => (
+        <Text key={label} style={styles.labelFacet}>
+          {label}
+        </Text>
+      ))}
+      {labels.length > ROW_LABEL_LIMIT ? (
+        <Text style={styles.facetText}>+{labels.length - ROW_LABEL_LIMIT}</Text>
+      ) : null}
       <Facet
         styles={styles}
         theme={theme}
@@ -236,7 +262,7 @@ export function workAccessibility(item: WorkItem): string {
     stateLabel(item.state),
     priorityLabel(item.priority) === null ? null : `priority ${priorityLabel(item.priority)}`,
     item.assignee === null ? null : `assigned to ${item.assignee}`,
-    item.attention ? "needs a human" : null,
+    item.labels.length === 0 ? null : `labels ${item.labels.join(", ")}`,
     item.critical ? "on the critical chain" : null,
     item.blockedBy.length === 0 ? null : `waits on ${item.blockedBy.join(", ")}`,
     item.heldVia === null ? null : `its parent ${item.heldVia} waits on ${item.inheritedBlockedBy.join(", ")}`,
@@ -250,14 +276,14 @@ export function WorkRow({
   theme,
   item,
   showState,
-  showPriority,
+  context,
   note,
   selected,
   onSelect,
 }: Common & {
   item: WorkItem;
   showState: boolean;
-  showPriority: boolean;
+  context: FacetContext;
   note?: string | null;
   selected: boolean;
   onSelect: (issueId: string) => void;
@@ -269,7 +295,7 @@ export function WorkRow({
       tone={stateTone(item.state)}
       title={item.title}
       facets={
-        <WorkFacets styles={styles} theme={theme} item={item} showState={showState} showPriority={showPriority} />
+        <WorkFacets styles={styles} theme={theme} item={item} showState={showState} context={context} />
       }
       note={note ?? null}
       selected={selected}

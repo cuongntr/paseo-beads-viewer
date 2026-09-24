@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attentionWork, buildProject, compareIds, workIn, workStateOf } from "../client/project";
+import { buildProject, compareIds, labelNamespace, workIn, workStateOf } from "../client/project";
 import type { Recommendation, Track } from "../shared/beads";
 import { issue, plannedProject, project } from "./work-fixtures";
 
@@ -24,7 +24,6 @@ function recommendation(overrides: Partial<Recommendation> & { id: string }): Re
 describe("work state", () => {
   it("lets an explicit status win and splits open work by its open blockers", () => {
     expect(workStateOf("closed", 0)).toBe("done");
-    expect(workStateOf("Done", 3)).toBe("done");
     expect(workStateOf("in_progress", 2)).toBe("active");
     expect(workStateOf("blocked", 0)).toBe("held");
     expect(workStateOf("deferred", 0)).toBe("held");
@@ -32,9 +31,19 @@ describe("work state", () => {
     expect(workStateOf("open", 1)).toBe("waiting");
   });
 
-  it("reads an unknown status as open rather than dropping it", () => {
-    expect(workStateOf("awaiting_triage", 0)).toBe("ready");
-    expect(workStateOf("awaiting_triage", 1)).toBe("waiting");
+  it("maps only Beads' built-in statuses and gives a custom one its own state", () => {
+    expect(workStateOf("hooked", 0)).toBe("active");
+    expect(workStateOf("draft", 0)).toBe("held");
+    expect(workStateOf("pinned", 0)).toBe("held");
+    // A project's own status is not guessed to be open, ready, or done.
+    expect(workStateOf("awaiting_review", 0)).toBe("other");
+    expect(workStateOf("done", 0)).toBe("other");
+    expect(workStateOf("review", 1)).toBe("other");
+  });
+
+  it("drops tombstones, which are deleted issues rather than finished work", () => {
+    const model = project([issue({ id: "a" }), issue({ id: "gone", status: "tombstone" })]);
+    expect(model.work.map((item) => item.id)).toEqual(["a"]);
   });
 });
 
@@ -50,7 +59,7 @@ describe("work and containers", () => {
       "p.2.3",
       "p.10.1",
     ]);
-    expect(model.counts).toEqual({ active: 1, ready: 2, waiting: 2, held: 0, done: 1 });
+    expect(model.counts).toEqual({ active: 1, ready: 2, waiting: 2, held: 0, other: 0, done: 1 });
     expect(model.byId.get("p.1")?.container).toBe(true);
   });
 
@@ -100,19 +109,33 @@ describe("work and containers", () => {
     expect(model.work.map((item) => item.id)).toEqual(["e"]);
   });
 
-  it("marks work that carries a human label", () => {
-    const model = project(plannedProject);
-    expect(model.byId.get("p.1.2")?.attention).toBe(true);
-    expect(attentionWork(model).map((item) => item.id)).toEqual(["p.1.2"]);
+  it("counts labels as written, without giving any of them a meaning", () => {
+    const model = project([
+      issue({ id: "a", labels: ["human-approval", "stack:ops", "everywhere"] }),
+      issue({ id: "b", labels: ["stack:ops", "everywhere"], blockedBy: ["a"] }),
+      issue({ id: "c", labels: ["stack:be", "everywhere"] }),
+      issue({ id: "d", labels: ["human-approval"], status: "closed" }),
+    ]);
+    // A label on every open item distinguishes nothing, so it is set apart.
+    expect([...model.commonLabels]).toEqual(["everywhere"]);
+    expect(model.labels).toEqual([
+      { label: "stack:ops", live: 2, ready: 1 },
+      { label: "human-approval", live: 1, ready: 1 },
+      { label: "stack:be", live: 1, ready: 1 },
+    ]);
+    expect(model.labelNamespaces).toEqual(["stack"]);
   });
 
-  it("lists attention work by what can start first, and drops finished work", () => {
-    const model = project([
-      issue({ id: "a", labels: ["human"], blockedBy: ["b"] }),
-      issue({ id: "b", labels: ["needs-approval"] }),
-      issue({ id: "c", labels: ["human"], status: "closed" }),
-    ]);
-    expect(attentionWork(model).map((item) => item.id)).toEqual(["b", "a"]);
+  it("reads a namespace only from a prefix:value label", () => {
+    expect(labelNamespace("stack:ops")).toBe("stack");
+    expect(labelNamespace("human-approval")).toBeNull();
+    expect(labelNamespace(":x")).toBeNull();
+    expect(labelNamespace("x:")).toBeNull();
+  });
+
+  it("reports whether type varies across live work", () => {
+    expect(project([issue({ id: "a" }), issue({ id: "b" })]).typeVaries).toBe(false);
+    expect(project([issue({ id: "a" }), issue({ id: "b", type: "bug" })]).typeVaries).toBe(true);
   });
 
   it("reports whether priority varies across live work", () => {
@@ -298,5 +321,15 @@ describe("working-set fallback", () => {
     expect(model.byId.has("ignored")).toBe(false);
     expect(model.byId.get("r")?.state).toBe("waiting");
     expect(model.byId.get("t")?.state).toBe("ready");
+  });
+});
+
+describe("label families", () => {
+  it("offers no family whose only label sits on every open item", () => {
+    const model = project([
+      issue({ id: "a", labels: ["feature:one", "stack:be"] }),
+      issue({ id: "b", labels: ["feature:one", "stack:fe"] }),
+    ]);
+    expect(model.labelNamespaces).toEqual(["stack"]);
   });
 });

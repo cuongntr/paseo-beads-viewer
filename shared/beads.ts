@@ -194,21 +194,27 @@ export type BoardSnapshot = z.output<typeof BoardSnapshotSchema>;
  */
 export const BOARD_ISSUE_LIMIT = 2000;
 
-/** Issue types that own other issues, so they can head a group. */
-export const CONTAINER_TYPES: readonly string[] = ["epic", "feature", "milestone", "story"];
+/**
+ * The statuses Beads itself defines, verified against `br 0.5.12`:
+ * "Built-in statuses: open, in_progress, blocked, deferred, draft, closed,
+ * tombstone, pinned", plus `hooked` from `bd`. A project may declare more in
+ * `.beads/policy.yaml`; those are custom, so the panel shows them verbatim and
+ * never guesses what they mean.
+ */
+export const BEADS_STATUSES = {
+  open: "open",
+  inProgress: "in_progress",
+  hooked: "hooked",
+  blocked: "blocked",
+  deferred: "deferred",
+  draft: "draft",
+  pinned: "pinned",
+  closed: "closed",
+  tombstone: "tombstone",
+} as const;
 
-/** Label prefix the board groups by on its feature axis. */
-export const FEATURE_LABEL_PREFIX = "feature:";
-
-/** Status spellings every known tracker uses for finished work. */
-export const CLOSED_STATUSES: readonly string[] = [
-  "closed",
-  "done",
-  "completed",
-  "resolved",
-  "cancelled",
-  "canceled",
-];
+/** Finished work: closed, or deleted and kept only as a tombstone. */
+const CLOSED_STATUSES: readonly string[] = [BEADS_STATUSES.closed, BEADS_STATUSES.tombstone];
 
 export function isClosedStatus(status: string): boolean {
   return CLOSED_STATUSES.includes(status.trim().toLowerCase());

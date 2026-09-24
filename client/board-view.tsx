@@ -2,18 +2,27 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { BOARD_GROUPINGS, type BoardGrouping, type BoardLane, type BoardModel } from "./board";
+import { boardGroupings, type BoardGrouping, type BoardLane, type BoardModel } from "./board";
 import { stateIconName, stateLabel, stateTone, toneColor } from "./format";
 import type { ProjectModel, WorkItem, WorkState } from "./project";
-import { Empty, ProgressBar, WorkFacets, workAccessibility } from "./rows";
+import { Empty, facetContext, ProgressBar, WorkFacets, workAccessibility, type FacetContext } from "./rows";
 import type { PanelStyles } from "./styles";
 
-const GROUPING_LABELS: Readonly<Record<BoardGrouping, string>> = {
-  package: "Package",
-  epic: "Epic",
-  feature: "Feature",
-  none: "None",
-};
+/** Label families read `stack:` so they are recognisable as the project's own prefix. */
+function groupingLabel(grouping: BoardGrouping): string {
+  switch (grouping) {
+    case "parent":
+      return "Parent";
+    case "root":
+      return "Top level";
+    case "none":
+      return "None";
+    case "labels":
+      return "Label";
+    default:
+      return `${grouping.slice("ns:".length)}:`;
+  }
+}
 
 /**
  * Read-only project board: lanes are the chosen grouping, columns are the
@@ -47,11 +56,12 @@ export function BoardView({
   const toggleLane = (key: string) =>
     setToggled((current) => (current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]));
   const isOpen = (lane: BoardLane) => lane.settled === toggled.includes(lane.key);
+  const context = facetContext(project);
 
   const caveats = [
     project.complete
       ? null
-      : "Whole-project graph unavailable: only triage picks and plan items appear, without their groups, and epics among them cannot be told from tasks.",
+      : "Whole-project graph unavailable: only triage picks and plan items appear, without their parents, so containers among them cannot be told from work.",
     project.truncated ? "Some closed issues were left out to bound the payload; open work is all here." : null,
     board.settledHidden === 0
       ? null
@@ -63,14 +73,14 @@ export function BoardView({
       <View style={styles.boardControlRow}>
         <Text style={styles.segmentCaption}>Group by</Text>
         <View style={styles.segmentRow} accessibilityRole="tablist" accessibilityLabel="Group the board by">
-          {BOARD_GROUPINGS.map((option) => {
+          {boardGroupings(project).map((option) => {
             const selected = option === board.grouping;
             return (
               <Pressable
                 key={option}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
-                accessibilityLabel={`Group by ${GROUPING_LABELS[option]}`}
+                accessibilityLabel={`Group by ${groupingLabel(option)}`}
                 onPress={() => onGroupingChange(option)}
                 style={({ pressed }) => [
                   styles.segmentItem,
@@ -79,7 +89,7 @@ export function BoardView({
                 ]}
               >
                 <Text style={selected ? styles.segmentLabelSelected : styles.segmentLabel}>
-                  {GROUPING_LABELS[option]}
+                  {groupingLabel(option)}
                 </Text>
               </Pressable>
             );
@@ -147,7 +157,7 @@ export function BoardView({
       theme={theme}
       item={item}
       showState={showState}
-      showPriority={project.priorityVaries}
+      context={context}
       selected={selectedId === item.id}
       onSelect={onSelect}
     />
@@ -318,7 +328,7 @@ function Card({
   theme,
   item,
   showState,
-  showPriority,
+  context,
   selected,
   onSelect,
 }: {
@@ -326,7 +336,7 @@ function Card({
   readonly theme: PluginTheme;
   readonly item: WorkItem;
   readonly showState: boolean;
-  readonly showPriority: boolean;
+  readonly context: FacetContext;
   readonly selected: boolean;
   readonly onSelect: (issueId: string) => void;
 }) {
@@ -344,7 +354,7 @@ function Card({
           {item.title}
         </Text>
         <View style={styles.facetRow}>
-          <WorkFacets styles={styles} theme={theme} item={item} showState={showState} showPriority={showPriority} />
+          <WorkFacets styles={styles} theme={theme} item={item} showState={showState} context={context} />
         </View>
       </View>
     </Pressable>

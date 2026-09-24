@@ -196,9 +196,9 @@ export async function getDashboard(
   const tracker = trackerResolution.state;
   if (tracker.kind !== null) rememberTracker(input.workspaceId, directory, trackerResolution);
 
-  // The graph carries no type or assignee, so the board's epic and type axes
+  // The graph carries no type or assignee, so the type and assignee facets
   // depend on this overlay. A tracker that is absent or rejects the flags costs
-  // those two axes and nothing else; it never fails the dashboard.
+  // those two facets and nothing else; it never fails the dashboard.
   let facets: TrackerFacets = EMPTY_FACETS;
   if (trackerResolution.route !== null && graphPayload !== null) {
     const csv = await runTrackerFacets(trackerResolution.route, directory);

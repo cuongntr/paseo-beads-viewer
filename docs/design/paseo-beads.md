@@ -128,9 +128,9 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
     absolute positioning.
 - **Views answer the reader's questions, not `bv`'s section names.** `Overview` (default) says how
   far along the project is and what to do next: done/total over work with a progress bar, counts
-  per work state, `bv`'s closing pace, progress per epic and work package, then In progress, Held,
-  Ready now (ranked by `bv`'s triage score within priority), Needs a human, and the critical
-  chain. `Board` lays every piece of work out by state. `Plan` is `bv`'s execution tracks with
+  per work state, `bv`'s closing pace, progress per top-level issue and per parent, then In
+  progress, Held, Ready now (ranked by `bv`'s triage score within priority), Other status, the
+  project's labels over open work, and the critical chain. `Board` lays every piece of work out by state. `Plan` is `bv`'s execution tracks with
   containers removed. `Risks` leads with what needs a decision. Tabs use `tablist`/`tab` roles and
   `accessibilityState.selected`; a view whose backing section is unavailable shows `—`.
 - **Pane proportions follow the view.** List views give the master pane slightly more room than the
@@ -151,7 +151,7 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   project, the panel built that way said "0 blocked · 12 ready" and put "blocked by 1" on the two
   top triage picks, while the truth was 15 issues waiting on dependencies, 5 startable tasks, and
   those two picks ready. Three causes, all verified against `bv v0.25.0` output: `blocked_count`
-  counts only the `blocked` *status*; `actionable_count` counts epics; and a `blocks` edge stays in
+  counts only the `blocked` *status*; `actionable_count` counts containers; and a `blocks` edge stays in
   the graph after its blocker closes. So the server keeps only open blockers per issue, and
   `client/project.ts` derives each issue's state (done, in progress, held, waiting on an open
   blocker, ready) from its status and those blockers. Work under an open container that has an open
@@ -168,14 +168,26 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   execution tracks, alerts, cycle detection, and velocity; the derived headline counts were checked
   against `bv`'s own `dependency_blocked` on two real projects and agree. Reopen this if `bv` gains
   a status-independent waiting count and a work-only ready count.
-- **Groups follow the plan's shape.** Work is grouped by its direct parent (the work package) under
-  its outermost container (the epic). Grouping straight to the outermost epic, as the MVP did, put
-  that 28-issue project in one group, and its feature label was shared by all 28 issues. Groups
-  sort by id with numbers compared numerically, so `WP-2` precedes `WP-10`; parentless work sinks
-  to a catch-all. Walks up the parent chain stop on a cycle or an absent parent.
-- **The board is lanes × state.** Lanes are the chosen grouping (package by default, or epic,
-  `feature:` label, or none); columns are the derived state. `Held` appears only when something is
-  held and `Done` only when the reader asks, since finished work is otherwise each lane's
+- **Decision: the panel interprets only what Beads and `bv` define, or what the data's structure
+  says; it serves every project, not one.** An earlier cut of this redesign read "needs a human"
+  from a fixed list of label spellings (`human-approval`, `needs-human`, …), grouped features by a
+  `feature:` prefix, and mapped status spellings such as `done` or `review` onto meanings. Each was
+  one project's convention: verified against `br 0.5.12`, Beads has no human-attention field, its
+  built-in statuses are `open, in_progress, blocked, deferred, draft, closed, tombstone, pinned`
+  (plus `bd`'s `hooked`), and anything else is custom, declared in `.beads/policy.yaml`. So:
+  built-in statuses map to work states and a custom status lands in `Other status`, shown
+  verbatim; groups come only from parent links; labels are shown and counted as written, a label
+  on every open item is set aside because it distinguishes nothing, and `prefix:value` label
+  families are offered as board groupings only when the project's data has them. A project that
+  wants to keep agents off some work already has `bv`'s own `BV_ROBOT_NOT_READY_LABELS`.
+- **Groups follow parent links.** Work is grouped by its direct parent under its top-level
+  ancestor, whatever a project calls those levels. Grouping straight to the top level, as the MVP
+  did, put a real 28-issue project in one group. Groups sort by id with numbers compared
+  numerically, so `x.2` precedes `x.10`; parentless work sinks to a catch-all. Walks up the
+  parent chain stop on a cycle or an absent parent.
+- **The board is lanes × state.** Lanes are the chosen grouping (parent by default, top level,
+  none, every label, or one label family found in the data); columns are the derived state.
+  `Held` and `Other status` appear only when non-empty and `Done` only when the reader asks, since finished work is otherwise each lane's
   progress; finished lanes are hidden and counted. On a wide panel every lane's cells share the
   flex shape of one fixed column header, so columns line up without horizontal scrolling. Compact
   stacks each lane's cards in state order and names the state on each card. A lane header opens
@@ -197,8 +209,9 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   it. Rows with no work state keep their own semantics: alerts use severity, keystones use
   actionability, search results use accent.
 - **Facets name the exceptions.** The identifier anchors the row; after it come only facts that
-  tell work apart — a raw status the state does not already say, assignee, "needs a human" (from a
-  `human-approval`-style label), "critical chain", bug type, the open blockers by id ("waits on
+  tell work apart — a raw status the state does not already say, assignee, "critical chain", the
+  type and priority only when open work differs in them, up to three of the project's labels as
+  written (leaving out any label every open item carries), the open blockers by id ("waits on
   x, y +2"), and how many open issues it unblocks. Accessibility labels keep every fact.
 - **The status line reports the project, then freshness.** `done/total · in progress · ready ·
   waiting · held · read Ns ago`. Source provenance (`complete · proven · fresh`) is a diagnostic,
@@ -215,9 +228,9 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
 **In scope**
 
 - Workspace panel at `workspace` and `explorer` locations, with refresh.
-- An Overview of progress per epic and work package, work by derived state, work needing a
-  human, and the critical chain; execution tracks; held work, cycles, alerts, and keystones.
-- A read-only whole-project `Board` of lanes (package, epic, feature, or none) by derived work
+- An Overview of progress per top-level issue and parent, work by derived state, the project's
+  labels over open work, and the critical chain; execution tracks; held work, cycles, alerts, and keystones.
+- A read-only whole-project `Board` of lanes (parent, top level, none, or discovered labels) by derived work
   state, sourced from `bv --robot-graph` plus the tracker's type/assignee CSV, with finished lanes
   hidden and a bounded payload.
 - Bounded issue search and selectable issue detail, with issue prose and comments rendered through
@@ -255,8 +268,8 @@ All tests run without a Beads repository. `bv` and the tracker CLIs are never re
 | Handlers (`tests/handlers.test.ts`) | Search sanitisation and error passthrough; tracker detection and refusal to guess; attachment `.beads` filtering, URL/resourceType/snapshot content, per-workspace failure isolation, result bounding and deduplication, and blank-query and list-failure short-circuits. |
 | Client presentation (`tests/format.test.ts`) | Authority tone and label across complete/partial/failed/not-claim-safe sources; priority tone mapping; Lucide status icon and status label mapping including unknown values; status and severity tone mapping; relative age; distinct message per error code. |
 | Markdown subset (`tests/markdown.test.ts`) | Block and inline parsing for every supported construct; malformed and unclosed emphasis, code, links, and fences degrading to plain text; adversarial marker soup proven not to throw; character, line, block, code-line, inline-segment, and nesting bounds asserted against the exported constants. |
-| Project model (`tests/project.test.ts`) | Work state from status and open blockers, unknown statuses; containers excluded from work and counts; human labels; package and epic grouping with numeric id order and a sinking catch-all; settled groups; cyclic parent chains; critical chain order, tie-break stability, cycles, and a 5000-step chain without stack overflow; ranking order; triage and plan enrichment; working-set fallback. |
-| Board layout (`tests/board.test.ts`) | Columns by derived state with conditional held/done; containers never carded; package, epic, feature (multi-label) and none lanes; finished lanes hidden and counted; per-cell caps. |
+| Project model (`tests/project.test.ts`) | Work state from status and open blockers, built-in statuses only, custom statuses kept apart, tombstones dropped; containers excluded from work and counts; labels counted as written with common labels set aside; parent and top-level grouping with numeric id order and a sinking catch-all; settled groups; cyclic parent chains; critical chain order, tie-break stability, cycles, and a 5000-step chain without stack overflow; ranking order; triage and plan enrichment; working-set fallback. |
+| Board layout (`tests/board.test.ts`) | Columns by derived state with conditional held/done; containers never carded; a column for custom statuses; parent, top-level, none, and discovered label-family lanes (multi-label); finished lanes hidden and counted; per-cell caps. |
 
 Verification gate before install: `npm run typecheck`, `npm test`, and the `client/` mobile
 audit with no hits.

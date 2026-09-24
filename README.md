@@ -1,8 +1,9 @@
 # paseo-beads
 
 A read-only Beads console for Paseo workspaces. For the workspace you are in it shows how far
-along the project is per epic and work package, what is in progress, what can start now, what
-needs a human, and the critical chain of dependencies; a whole-project board by work state;
+along the project is per parent issue, what is in progress, what can start now, how the project's
+own labels spread over open work, and the critical chain of dependencies; a whole-project board
+by work state;
 execution tracks; risks; issue search; Markdown-rendered issue detail; and a composer attachment
 source for Beads issues.
 
@@ -90,7 +91,7 @@ After editing source, run `paseo plugin reload paseo-beads`.
 - `bv --robot-*` is the authority for ranking, recommendations, execution tracks, alerts, cycle
   detection, and velocity. The plugin derives only each issue's work state (from its status and
   its still-open blockers) and the longest remaining dependency chain, because `bv`'s own counts
-  treat dependency-blocked work as unblocked and epics as ready; see the design doc. `bv` and its `source_authority`, freshness, and `data_hash` are shown as
+  treat dependency-blocked work as unblocked and containers as ready; see the design doc. `bv` and its `source_authority`, freshness, and `data_hash` are shown as
   reported.
 - Only short-lived normalized command results are cached (15 s for the dashboard, 2 min for
   tracker identity and its validated route), invalidated purely by expiry. No derived graph is
@@ -109,16 +110,24 @@ After editing source, run `paseo plugin reload paseo-beads`.
   reshapes them.
 - Statuses, readiness values, and alert severities are treated as opaque strings, so a newer
   `bv` renders without a plugin update but without bespoke styling for new values.
-- The **Board** lays out every piece of work `bv --robot-graph` reports in lanes by **Package**
-  (direct parent, the default), **Epic** (outermost container), **Feature** (`feature:` label), or
-  **None**, and columns by work state: In progress, Ready, Waiting, Held (only when something is
-  held), and Done (only with **Show done**). Epics and other containers are lane headings and
-  progress, never cards. Finished lanes are hidden and counted, each lane and state renders at
-  most 40 cards with the rest reported as `+N more`, and a project past 2000 issues drops closed
-  issues from the payload first and says so. If the graph read fails, the panel falls back to the
-  triage and plan working set and says so. It is read-only: no drag, no drop, no status change.
-- "Needs a human" is read from labels (`human-approval`, `human`, `needs-human`, `approval`,
-  `needs-approval`, `needs-decision`); Beads has no field for it.
+- The panel serves any Beads project, so it interprets only what Beads and `bv` define and what
+  the data's structure says. Statuses are Beads' built-in set (`open`, `in_progress`, `hooked`,
+  `blocked`, `deferred`, `draft`, `pinned`, `closed`, `tombstone`); a custom status declared in a
+  project's `.beads/policy.yaml` is shown verbatim under **Other status**, not guessed to be ready
+  or done. Groups follow parent links, never type names or id patterns. Labels are the project's
+  own vocabulary: they are shown and counted as written, a label carried by every open item is
+  set aside as uninformative, and no label is given a meaning — so there is no built-in "needs a
+  human". To keep agents off some work, use `bv`'s own `BV_ROBOT_NOT_READY_LABELS`, which the
+  panel's `bv` reads inherit.
+- The **Board** lays out every piece of work `bv --robot-graph` reports in lanes by **Parent**
+  (the default), **Top level** (outermost parent), **None**, **Label**, or one `prefix:` label
+  family found in the project's labels, and columns by work state: In progress, Ready, Waiting,
+  Held and Other status (each only when non-empty), and Done (only with **Show done**). Issues
+  that other issues name as parent are lane headings and progress, never cards. Finished lanes
+  are hidden and counted, each lane and state renders at most 40 cards with the rest reported as
+  `+N more`, and a project past 2000 issues drops closed issues from the payload first and says
+  so. If the graph read fails, the panel falls back to the triage and plan working set and says
+  so. It is read-only: no drag, no drop, no status change.
 - Issue prose renders through a bounded in-repo Markdown subset (headings h1–h3, lists, task
   items, quotes, rules, code, bold, italic, links). HTML, images, and tables are not rendered,
   and link targets are shown as text — the panel never opens a URL.

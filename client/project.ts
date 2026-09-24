@@ -2,44 +2,44 @@
  * The project as a reader thinks about it: which work is done, moving, ready,
  * waiting on something, or held, and how that adds up per group.
  *
+ * This panel serves every Beads project, so it only interprets what Beads and
+ * `bv` define, or what the data's own structure says:
+ *   - statuses are Beads' built-in set; a project's custom status is shown
+ *     verbatim in its own `other` state, never mapped onto a guessed meaning;
+ *   - groups come from parent links, not from type names or id patterns;
+ *   - labels are a project's own vocabulary, so they are shown and counted as
+ *     written, and none is given a meaning here.
+ *
  * `bv` stays the authority for ranking (triage score), recommendations, plan
- * tracks and alerts. What `bv` reports but a reader misreads is re-derived here
- * from the whole-project graph, measured on a real project:
+ * tracks and alerts. What `bv` reports but a reader misreads is re-derived from
+ * the whole-project graph, measured on a real project:
  *   - `blocked_count` counts only the `blocked` *status*, so a project with 15
  *     dependency-blocked issues showed "0 blocked";
- *   - `actionable_count` counts epics, so "12 ready" held 5 real tasks.
+ *   - `actionable_count` counts containers, so "12 ready" held 5 real tasks.
  * So an issue is *work* when nothing in the graph names it as a parent, and a
  * *container* when something does; only work is counted, carded and ranked.
- * Containers become the groups progress is reported against.
  *
  * Everything here is pure so it can be tested in the Vitest node environment.
  */
-import { isClosedStatus, type BoardIssue, type Recommendation, type Track } from "../shared/beads";
+import { BEADS_STATUSES, isClosedStatus, type BoardIssue, type Recommendation, type Track } from "../shared/beads";
 
-/** Where a piece of work stands, derived from its status and its open blockers. */
-export type WorkState = "active" | "ready" | "waiting" | "held" | "done";
+/**
+ * Where a piece of work stands. `other` holds a status Beads does not define:
+ * its meaning belongs to the project, so it is neither ready nor waiting here.
+ */
+export type WorkState = "active" | "ready" | "waiting" | "held" | "other" | "done";
 
-/** Reading order: what is moving, what can start, what cannot, what is parked, what is finished. */
-export const WORK_STATES: readonly WorkState[] = ["active", "ready", "waiting", "held", "done"];
+/** Reading order: moving, can start, cannot start, parked, unknown to Beads, finished. */
+export const WORK_STATES: readonly WorkState[] = ["active", "ready", "waiting", "held", "other", "done"];
 
-const ACTIVE_STATUSES: readonly string[] = [
-  "in_progress",
-  "in progress",
-  "in-progress",
-  "active",
-  "doing",
-  "started",
-  "in_review",
-  "in review",
-  "review",
-  "hooked",
-];
+/** Claimed and being worked on. */
+const ACTIVE_STATUSES: readonly string[] = [BEADS_STATUSES.inProgress, BEADS_STATUSES.hooked];
 
-/** Held because something is in the way: these need a decision. */
-const STUCK_STATUSES: readonly string[] = ["blocked", "waiting", "on_hold", "on hold", "on-hold"];
+/** Held because something is in the way: this needs a decision. */
+const STUCK_STATUSES: readonly string[] = [BEADS_STATUSES.blocked];
 
-/** Held on purpose: parked, not stuck. */
-const PARKED_STATUSES: readonly string[] = ["deferred", "paused", "pinned"];
+/** Held on purpose: scheduled for later, still being written, or kept as reference. */
+const PARKED_STATUSES: readonly string[] = [BEADS_STATUSES.deferred, BEADS_STATUSES.draft, BEADS_STATUSES.pinned];
 
 const HELD_STATUSES: readonly string[] = [...STUCK_STATUSES, ...PARKED_STATUSES];
 
@@ -49,29 +49,16 @@ export function isParked(status: string): boolean {
 }
 
 /**
- * Labels that mean a person, not an agent, has to act. Beads has no field for
- * this, so projects mark it with a label; these are the spellings in use.
- */
-export const ATTENTION_LABELS: readonly string[] = [
-  "human-approval",
-  "human",
-  "needs-human",
-  "approval",
-  "needs-approval",
-  "needs-decision",
-];
-
-/**
  * An explicit status wins over the graph: work someone claimed is active even
- * if a blocker reopened, and a deliberately parked issue is held. Only open
- * work is split by its blockers. Unknown statuses read as open, so a newer
- * tracker's status still lands somewhere sensible.
+ * if a blocker reopened, and parked work is held. Only `open` work is split by
+ * its blockers.
  */
 export function workStateOf(status: string, openBlockers: number): WorkState {
   const normalized = status.trim().toLowerCase();
   if (isClosedStatus(normalized)) return "done";
   if (ACTIVE_STATUSES.includes(normalized)) return "active";
   if (HELD_STATUSES.includes(normalized)) return "held";
+  if (normalized !== BEADS_STATUSES.open) return "other";
   return openBlockers > 0 ? "waiting" : "ready";
 }
 
@@ -101,8 +88,6 @@ export interface WorkItem {
   readonly parentId: string | null;
   /** True when some issue names this one as its parent. */
   readonly container: boolean;
-  /** True when a label says a person has to act. */
-  readonly attention: boolean;
   /** True when this issue is on the longest chain of open dependencies. */
   readonly critical: boolean;
   /** Triage score when `bv` recommended this issue; its ranking, not ours. */
@@ -159,6 +144,21 @@ export interface ProjectModel {
   readonly chainCycle: boolean;
   /** False when every live work item shares one priority, so priority carries no signal. */
   readonly priorityVaries: boolean;
+  /** False when every live work item shares one type. */
+  readonly typeVaries: boolean;
+  /** Labels on every live work item: true of everything, so they tell nothing apart. */
+  readonly commonLabels: ReadonlySet<string>;
+  /** Every other label on live work, most used first. */
+  readonly labels: readonly LabelStat[];
+  /** Prefixes of `prefix:value` labels on live work, most used first. */
+  readonly labelNamespaces: readonly string[];
+}
+
+/** How much live work carries one label, and how much of that can start. */
+export interface LabelStat {
+  readonly label: string;
+  readonly live: number;
+  readonly ready: number;
 }
 
 export interface ProjectInput {
@@ -204,7 +204,6 @@ export function buildProject(input: ProjectInput): ProjectModel {
       assignee: seed.assignee ?? recommendation?.assignee ?? null,
       type: seed.type ?? recommendation?.type ?? null,
       container: parents.has(seed.id),
-      attention: seed.labels.some((label) => ATTENTION_LABELS.includes(label.trim().toLowerCase())),
       critical: false,
       score: recommendation?.score ?? null,
       action: recommendation?.action ?? null,
@@ -218,7 +217,8 @@ export function buildProject(input: ProjectInput): ProjectModel {
   for (const [id, item] of draft) byId.set(id, onChain.has(id) ? { ...item, critical: true } : item);
 
   const work = [...byId.values()].filter((item) => !item.container).sort(compareWork);
-  const livePriorities = new Set(work.filter((item) => item.state !== "done").map((item) => item.priority));
+  const live = work.filter((item) => item.state !== "done");
+  const labelFacts = labelsOf(live);
 
   return {
     complete: input.graphAvailable,
@@ -229,7 +229,9 @@ export function buildProject(input: ProjectInput): ProjectModel {
     roots: buildRoots(work, byId),
     chain: chainIds.map((id) => byId.get(id)).filter((item) => item !== undefined),
     chainCycle: cycle,
-    priorityVaries: livePriorities.size > 1,
+    priorityVaries: new Set(live.map((item) => item.priority)).size > 1,
+    typeVaries: new Set(live.map((item) => item.type)).size > 1,
+    ...labelFacts,
   };
 }
 
@@ -281,6 +283,8 @@ function seedsFromGraph(issues: readonly BoardIssue[]): Map<string, Seed> {
   const seeds = new Map<string, Seed>();
   for (const issue of issues) {
     if (issue.id.length === 0 || seeds.has(issue.id)) continue;
+    // A tombstone is a deleted issue, not finished work.
+    if (issue.status.trim().toLowerCase() === BEADS_STATUSES.tombstone) continue;
     seeds.set(issue.id, {
       id: issue.id,
       title: issue.title,
@@ -482,7 +486,7 @@ function buildRoots(work: readonly WorkItem[], byId: ReadonlyMap<string, WorkIte
       return {
         key,
         id: entry.id,
-        title: container?.title ?? "Not under an epic",
+        title: container?.title ?? "No parent",
         packages: sorted,
         counts,
         done: counts.done,
@@ -532,13 +536,13 @@ function comparePackages(
 }
 
 export function countStates(items: readonly WorkItem[]): StateCounts {
-  const counts: Record<WorkState, number> = { active: 0, ready: 0, waiting: 0, held: 0, done: 0 };
+  const counts: Record<WorkState, number> = { active: 0, ready: 0, waiting: 0, held: 0, other: 0, done: 0 };
   for (const item of items) counts[item.state] += 1;
   return counts;
 }
 
 function sumCounts(all: readonly StateCounts[]): StateCounts {
-  const counts: Record<WorkState, number> = { active: 0, ready: 0, waiting: 0, held: 0, done: 0 };
+  const counts: Record<WorkState, number> = { active: 0, ready: 0, waiting: 0, held: 0, other: 0, done: 0 };
   for (const entry of all) for (const state of WORK_STATES) counts[state] += entry[state];
   return counts;
 }
@@ -570,10 +574,43 @@ export function workIn(project: ProjectModel, state: WorkState): readonly WorkIt
   return project.work.filter((item) => item.state === state);
 }
 
-/** Unfinished work a person has to act on, whatever can start first. */
-export function attentionWork(project: ProjectModel): readonly WorkItem[] {
-  const order = (item: WorkItem) => WORK_STATES.indexOf(item.state);
-  return project.work
-    .filter((item) => item.attention && item.state !== "done")
-    .sort((left, right) => order(left) - order(right) || compareWork(left, right));
+/**
+ * Label facts over live work. A label on every live item is kept apart: on a
+ * project where one label marks everything, it would otherwise head every list
+ * while distinguishing nothing.
+ */
+function labelsOf(live: readonly WorkItem[]): Pick<ProjectModel, "commonLabels" | "labels" | "labelNamespaces"> {
+  const stats = new Map<string, { live: number; ready: number }>();
+  for (const item of live) {
+    for (const label of new Set(item.labels)) {
+      const stat = stats.get(label) ?? { live: 0, ready: 0 };
+      stat.live += 1;
+      if (item.state === "ready") stat.ready += 1;
+      stats.set(label, stat);
+    }
+  }
+  const common = new Set<string>();
+  const labels: LabelStat[] = [];
+  for (const [label, stat] of stats) {
+    if (live.length > 1 && stat.live === live.length) common.add(label);
+    else labels.push({ label, ...stat });
+  }
+  labels.sort((left, right) => right.live - left.live || compareIds(left.label, right.label));
+
+  // A family whose only label is on everything would group into one lane.
+  const namespaces = new Map<string, number>();
+  for (const { label, live: count } of labels) {
+    const namespace = labelNamespace(label);
+    if (namespace !== null) namespaces.set(namespace, (namespaces.get(namespace) ?? 0) + count);
+  }
+  const labelNamespaces = [...namespaces.entries()]
+    .sort((left, right) => right[1] - left[1] || compareIds(left[0], right[0]))
+    .map(([namespace]) => namespace);
+  return { commonLabels: common, labels, labelNamespaces };
+}
+
+/** The part before the first `:` of a `prefix:value` label, or null for a plain label. */
+export function labelNamespace(label: string): string | null {
+  const index = label.indexOf(":");
+  return index > 0 && index < label.length - 1 ? label.slice(0, index) : null;
 }

@@ -4,16 +4,16 @@
  * Columns are the derived {@link WorkState}, not the raw status: on a real
  * project every live issue had status `open`, so a status board was one column
  * of 27 cards that could not tell ready work from work waiting on three others.
- * Lanes are the grouping the reader picks, by default the work package (the
- * direct parent), which is the unit a Beads plan is written in.
+ * Lanes are the grouping the reader picks, by default the direct parent, which
+ * is how a Beads plan nests its work whatever the project calls its levels.
  *
  * Only work is carded. A container is its lane's heading and progress, never a
  * card beside its own tasks. Everything is pure for the Vitest node environment.
  */
-import { FEATURE_LABEL_PREFIX } from "../shared/beads";
 import {
   compareIds,
   countStates,
+  labelNamespace,
   LOOSE_KEY,
   WORK_STATES,
   type ProjectModel,
@@ -22,10 +22,21 @@ import {
   type WorkState,
 } from "./project";
 
-/** How the board divides work into lanes. */
-export type BoardGrouping = "package" | "epic" | "feature" | "none";
+/**
+ * How the board divides work into lanes. `parent` and `root` follow parent
+ * links; `labels` puts work under each label it carries; `ns:<prefix>` does the
+ * same for one `prefix:value` label family. Label groupings are discovered from
+ * the project's own labels, never from a fixed list.
+ */
+export type BoardGrouping = "parent" | "root" | "none" | "labels" | `ns:${string}`;
 
-export const BOARD_GROUPINGS: readonly BoardGrouping[] = ["package", "epic", "feature", "none"];
+/** Groupings this project's data supports, in the order they are offered. */
+export function boardGroupings(project: ProjectModel): readonly BoardGrouping[] {
+  const groupings: BoardGrouping[] = ["parent", "root", "none"];
+  if (project.labels.length > 0) groupings.push("labels");
+  for (const namespace of project.labelNamespaces) groupings.push(`ns:${namespace}`);
+  return groupings;
+}
 
 /**
  * Cards rendered per cell. The lane header keeps the true count, and the view
@@ -83,10 +94,12 @@ export function buildBoard(project: ProjectModel, grouping: BoardGrouping, showD
   const lanes = showDone ? all : all.filter((lane) => !lane.settled);
   const counts = countStates(project.work);
 
-  // Held is an exception, so its column appears only when something is held.
-  // Done is a column only on request; otherwise it is each lane's progress.
+  // Held and other statuses are exceptions, so their columns appear only when
+  // something is in them. Done is a column only on request; otherwise it is
+  // each lane's progress.
   const columns = WORK_STATES.filter((state) => {
     if (state === "held") return counts.held > 0;
+    if (state === "other") return counts.other > 0;
     if (state === "done") return showDone;
     return true;
   });
@@ -111,46 +124,40 @@ interface LaneSlot {
 }
 
 /**
- * Which lanes an item belongs to. Only the feature grouping can return more
- * than one: an issue carrying two `feature:` labels belongs to both.
+ * Which lanes an item belongs to. Label groupings can return several: an issue
+ * carrying two labels genuinely belongs to both lanes.
  */
 function slotsFor(item: WorkItem, grouping: BoardGrouping, project: ProjectModel): readonly LaneSlot[] {
-  switch (grouping) {
-    case "none":
-      return [{ key: "all", label: "All work", headerId: null, context: null, order: "" }];
-    case "feature": {
-      // A label repeated on one issue is still one membership.
-      const features = [...new Set(item.labels.filter((label) => label.startsWith(FEATURE_LABEL_PREFIX)))];
-      if (features.length === 0) return [catchAll("No feature label")];
-      return features.map((label) => ({
-        key: label,
-        label: label.slice(FEATURE_LABEL_PREFIX.length),
-        headerId: null,
-        context: null,
-        order: label,
-      }));
-    }
-    case "package": {
-      const parent = item.parentId === null ? undefined : project.byId.get(item.parentId);
-      if (parent === undefined) return [catchAll("No parent")];
-      const root = outermost(parent, project);
-      return [
-        {
-          key: parent.id,
-          label: parent.title,
-          headerId: parent.id,
-          context: root.id === parent.id ? null : root.id,
-          order: parent.id,
-        },
-      ];
-    }
-    case "epic": {
-      const parent = item.parentId === null ? undefined : project.byId.get(item.parentId);
-      if (parent === undefined) return [catchAll("Not under an epic")];
-      const root = outermost(parent, project);
-      return [{ key: root.id, label: root.title, headerId: root.id, context: null, order: root.id }];
-    }
+  if (grouping === "none") {
+    return [{ key: "all", label: "All work", headerId: null, context: null, order: "" }];
   }
+  if (grouping === "parent" || grouping === "root") {
+    const parent = item.parentId === null ? undefined : project.byId.get(item.parentId);
+    if (parent === undefined) return [catchAll("No parent")];
+    const root = outermost(parent, project);
+    const lane = grouping === "parent" ? parent : root;
+    return [
+      {
+        key: lane.id,
+        label: lane.title,
+        headerId: lane.id,
+        context: grouping === "parent" && root.id !== parent.id ? root.id : null,
+        order: lane.id,
+      },
+    ];
+  }
+  const labels = [...new Set(item.labels)].filter((label) => {
+    if (grouping === "labels") return !project.commonLabels.has(label);
+    return labelNamespace(label) === grouping.slice("ns:".length);
+  });
+  if (labels.length === 0) return [catchAll(grouping === "labels" ? "No label" : `No ${grouping.slice(3)}: label`)];
+  return labels.map((label) => ({
+    key: label,
+    label: grouping === "labels" ? label : label.slice(grouping.length - 2),
+    headerId: null,
+    context: null,
+    order: label,
+  }));
 }
 
 function catchAll(label: string): LaneSlot {

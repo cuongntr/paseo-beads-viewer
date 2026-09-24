@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_CELL_CARD_LIMIT, buildBoard } from "../client/board";
+import { BOARD_CELL_CARD_LIMIT, boardGroupings, buildBoard } from "../client/board";
 import { issue, plannedProject, project } from "./work-fixtures";
 
 describe("board columns", () => {
   it("uses derived work state, with held only when something is held and done only on request", () => {
-    const board = buildBoard(project(plannedProject), "package", false);
+    const board = buildBoard(project(plannedProject), "parent", false);
     expect(board.columns).toEqual(["active", "ready", "waiting"]);
-    const withHeld = buildBoard(project([...plannedProject, issue({ id: "h", status: "deferred" })]), "package", true);
+    const withHeld = buildBoard(project([...plannedProject, issue({ id: "h", status: "deferred" })]), "parent", true);
     expect(withHeld.columns).toEqual(["active", "ready", "waiting", "held", "done"]);
   });
 
@@ -19,8 +19,8 @@ describe("board columns", () => {
 });
 
 describe("board lanes", () => {
-  it("defaults to work packages in id order, naming the outer epic as context", () => {
-    const board = buildBoard(project(plannedProject), "package", false);
+  it("defaults to the direct parent in id order, naming the top-level issue as context", () => {
+    const board = buildBoard(project(plannedProject), "parent", false);
     expect(board.lanes.map((lane) => [lane.key, lane.done, lane.total, lane.context])).toEqual([
       ["p.1", 1, 2, "p"],
       ["p.2", 0, 3, "p"],
@@ -29,26 +29,34 @@ describe("board lanes", () => {
     expect(board.lanes[1]?.cells.waiting.cards.map((item) => item.id)).toEqual(["p.2.2", "p.2.3"]);
   });
 
-  it("groups by the outermost epic on the epic grouping", () => {
-    const board = buildBoard(project(plannedProject), "epic", false);
+  it("groups by the top-level issue on the root grouping", () => {
+    const board = buildBoard(project(plannedProject), "root", false);
     expect(board.lanes.map((lane) => [lane.key, lane.total])).toEqual([["p", 6]]);
   });
 
-  it("keeps an issue in every feature it is labelled with and sinks unlabelled work", () => {
-    const board = buildBoard(
-      project([
-        issue({ id: "a", labels: ["feature:x", "feature:y"] }),
-        issue({ id: "b", labels: ["feature:y"] }),
-        issue({ id: "c" }),
-      ]),
-      "feature",
-      false,
-    );
-    expect(board.lanes.map((lane) => [lane.label, lane.total])).toEqual([
-      ["x", 1],
-      ["y", 2],
-      ["No feature label", 1],
+  it("groups by a label family discovered from the data and keeps multi-labelled work in each lane", () => {
+    const model = project([
+      issue({ id: "a", labels: ["stack:be", "stack:fe"] }),
+      issue({ id: "b", labels: ["stack:fe"] }),
+      issue({ id: "c" }),
     ]);
+    expect(boardGroupings(model)).toEqual(["parent", "root", "none", "labels", "ns:stack"]);
+    const board = buildBoard(model, "ns:stack", false);
+    expect(board.lanes.map((lane) => [lane.label, lane.total])).toEqual([
+      ["be", 1],
+      ["fe", 2],
+      ["No stack: label", 1],
+    ]);
+  });
+
+  it("offers no label grouping to a project without labels", () => {
+    expect(boardGroupings(project([issue({ id: "a" })]))).toEqual(["parent", "root", "none"]);
+  });
+
+  it("shows a custom status in its own column instead of guessing it is ready", () => {
+    const board = buildBoard(project([issue({ id: "a", status: "awaiting_review" }), issue({ id: "b" })]), "none", false);
+    expect(board.columns).toEqual(["active", "ready", "waiting", "other"]);
+    expect(board.lanes[0]?.cells.other.cards.map((item) => item.id)).toEqual(["a"]);
   });
 
   it("hides finished lanes unless done work is shown, and says how many", () => {
@@ -58,10 +66,10 @@ describe("board lanes", () => {
       issue({ id: "f", type: "epic" }),
       issue({ id: "f.1", parentId: "f" }),
     ];
-    const hidden = buildBoard(project(issues), "package", false);
+    const hidden = buildBoard(project(issues), "parent", false);
     expect(hidden.lanes.map((lane) => lane.key)).toEqual(["f"]);
     expect(hidden.settledHidden).toBe(1);
-    const shown = buildBoard(project(issues), "package", true);
+    const shown = buildBoard(project(issues), "parent", true);
     expect(shown.lanes.map((lane) => lane.key)).toEqual(["e", "f"]);
     expect(shown.settledHidden).toBe(0);
   });
@@ -77,7 +85,7 @@ describe("board lanes", () => {
 
 describe("board edge cases", () => {
   it("places an issue once in a feature lane even when the label repeats", () => {
-    const board = buildBoard(project([issue({ id: "a", labels: ["feature:x", "feature:x"] })]), "feature", false);
+    const board = buildBoard(project([issue({ id: "a", labels: ["f:x", "f:x"] })]), "ns:f", false);
     expect(board.lanes.map((lane) => [lane.label, lane.total])).toEqual([["x", 1]]);
   });
 });

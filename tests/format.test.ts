@@ -11,7 +11,7 @@ import {
   shortHash,
   statusIconName,
   statusLabel,
-  statusTone,
+  stateTone,
   toneColor,
 } from "../client/format";
 import type { PluginTheme } from "@getpaseo/plugin";
@@ -79,12 +79,13 @@ describe("authority presentation", () => {
 });
 
 describe("status and severity tones", () => {
-  it("maps known statuses and leaves unknown ones neutral", () => {
-    expect(statusTone("closed")).toBe("success");
-    expect(statusTone("in_progress")).toBe("accent");
-    expect(statusTone("blocked")).toBe("danger");
-    expect(statusTone("open")).toBe("neutral");
-    expect(statusTone("awaiting_review")).toBe("neutral");
+  it("colours derived work state, marking a custom status as an exception", () => {
+    expect(stateTone("active")).toBe("accent");
+    expect(stateTone("ready")).toBe("success");
+    expect(stateTone("held")).toBe("danger");
+    expect(stateTone("other")).toBe("warning");
+    expect(stateTone("waiting")).toBe("neutral");
+    expect(stateTone("done")).toBe("neutral");
   });
 
   it("encodes priority as the primary tone with lower priorities neutral", () => {
@@ -96,14 +97,16 @@ describe("status and severity tones", () => {
     expect(priorityTone(null)).toBe("neutral");
   });
 
-  it("names a Lucide status icon for known and unknown statuses", () => {
+  it("gives Beads' built-in statuses an icon and every custom status the neutral one", () => {
     expect(statusIconName("in_progress")).toBe("Play");
-    expect(statusIconName("In Progress")).toBe("Play");
+    expect(statusIconName("hooked")).toBe("Play");
     expect(statusIconName("blocked")).toBe("CircleSlash");
-    expect(statusIconName("ready")).toBe("CircleDot");
+    expect(statusIconName("deferred")).toBe("CircleSlash");
     expect(statusIconName("open")).toBe("Circle");
     expect(statusIconName("closed")).toBe("CircleCheck");
-    expect(statusIconName("cancelled")).toBe("CircleX");
+    // Spellings Beads does not define get no borrowed meaning.
+    expect(statusIconName("In Progress")).toBe("CircleDashed");
+    expect(statusIconName("done")).toBe("CircleDashed");
     expect(statusIconName("awaiting_review")).toBe("CircleDashed");
   });
 

@@ -142,7 +142,8 @@ export interface PanelStyles {
   readonly groupRowHead: ViewStyle;
   readonly groupTitle: TextStyle;
   readonly groupTitleStrong: TextStyle;
-  readonly facetWarningText: TextStyle;
+  readonly labelFacet: TextStyle;
+  readonly labelRow: ViewStyle;
   readonly facetAccentText: TextStyle;
   readonly boardLaneHeader: ViewStyle;
   readonly boardLaneTitle: TextStyle;
@@ -508,7 +509,15 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     groupRowHead: { flexDirection: "row", alignItems: "baseline", gap: 10 },
     groupTitle: { flex: 1, color: theme.colors.foreground, fontSize: 12 },
     groupTitleStrong: { flex: 1, color: theme.colors.foreground, fontSize: 13, fontWeight: "700" },
-    facetWarningText: { color: theme.colors.statusWarning, fontSize: 10, fontWeight: "600" },
+    labelRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 3 },
+    /** A project label, written as the project wrote it. */
+    labelFacet: {
+      color: theme.colors.foregroundMuted,
+      fontSize: 10,
+      paddingHorizontal: 4,
+      borderRadius: 3,
+      backgroundColor: theme.colors.surface2,
+    },
     facetAccentText: { color: theme.colors.accent, fontSize: 10, fontWeight: "600" },
     boardLaneTitle: {
       color: theme.colors.foreground,

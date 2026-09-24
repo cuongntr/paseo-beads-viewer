@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import type { Alert, CommandError, SourceAuthority } from "../shared/beads";
+import { BEADS_STATUSES, type Alert, type CommandError, type SourceAuthority } from "../shared/beads";
 import type { WorkState } from "./project";
 
 /** Semantic accent used by the status rail and severity marks. */
@@ -20,33 +20,7 @@ export function toneColor(theme: PluginTheme, tone: Tone): string {
   }
 }
 
-/**
- * Beads statuses are opaque and carry no colour of their own: the row rail is
- * priority-encoded, so status is expressed as {@link statusIconName} plus text.
- * This mapping exists only for the few places that still need a status accent.
- */
-export function statusTone(status: string): Tone {
-  switch (status.toLowerCase()) {
-    case "closed":
-    case "done":
-      return "success";
-    case "in_progress":
-    case "in progress":
-      return "accent";
-    case "blocked":
-      return "danger";
-    case "open":
-    case "ready":
-      return "neutral";
-    default:
-      return "neutral";
-  }
-}
-
-/**
- * Priority is the primary colour encoding for issue rows and cards: it is the
- * only ranking `bv` reports that is comparable across opaque statuses.
- */
+/** Priority colour, for the priority dot and for rows that carry no work state. */
 export function priorityTone(priority: number | null): Tone {
   if (priority === null) return "neutral";
   if (priority <= 0) return "danger";
@@ -56,40 +30,25 @@ export function priorityTone(priority: number | null): Tone {
 }
 
 /**
- * Lucide icon name for an opaque Beads status. Status is conveyed by icon plus
- * text, never by colour, so priority keeps the colour channel to itself.
+ * Lucide icon for a status. Only Beads' built-in statuses get their own icon;
+ * a project's custom status gets the neutral dashed circle rather than a
+ * borrowed meaning.
  */
 export function statusIconName(status: string): string {
   switch (status.trim().toLowerCase()) {
-    case "in_progress":
-    case "in progress":
-    case "in-progress":
-    case "active":
-    case "doing":
-    case "started":
+    case BEADS_STATUSES.inProgress:
+    case BEADS_STATUSES.hooked:
       return "Play";
-    case "blocked":
-    case "waiting":
-    case "on_hold":
-    case "on hold":
+    case BEADS_STATUSES.blocked:
+    case BEADS_STATUSES.deferred:
+    case BEADS_STATUSES.draft:
+    case BEADS_STATUSES.pinned:
       return "CircleSlash";
-    case "ready":
-    case "actionable":
-      return "CircleDot";
-    case "open":
-    case "todo":
-    case "to_do":
-    case "to do":
-    case "backlog":
-    case "new":
+    case BEADS_STATUSES.open:
       return "Circle";
-    case "closed":
-    case "done":
-    case "completed":
-    case "resolved":
+    case BEADS_STATUSES.closed:
       return "CircleCheck";
-    case "cancelled":
-    case "canceled":
+    case BEADS_STATUSES.tombstone:
       return "CircleX";
     default:
       return "CircleDashed";
@@ -189,6 +148,8 @@ export function stateTone(state: WorkState): Tone {
       return "success";
     case "held":
       return "danger";
+    case "other":
+      return "warning";
     case "waiting":
     case "done":
       return "neutral";
@@ -205,6 +166,8 @@ export function stateLabel(state: WorkState): string {
       return "Waiting";
     case "held":
       return "Held";
+    case "other":
+      return "Other status";
     case "done":
       return "Done";
   }
@@ -220,6 +183,8 @@ export function stateIconName(state: WorkState): string {
       return "Circle";
     case "held":
       return "CircleSlash";
+    case "other":
+      return "CircleDashed";
     case "done":
       return "CircleCheck";
   }

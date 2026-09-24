@@ -2,26 +2,24 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { Pressable, Text, View } from "react-native";
 import type { ProjectHealth, Recommendation } from "../shared/beads";
 import { percentDone, toneColor } from "./format";
-import {
-  attentionWork,
-  workIn,
-  type ProjectModel,
-  type WorkPackage,
-  type WorkRoot,
-} from "./project";
-import { Empty, ProgressBar, RecommendationRow, SectionHeader, WorkRow } from "./rows";
+import { workIn, type ProjectModel, type WorkPackage, type WorkRoot } from "./project";
+import { Empty, facetContext, ProgressBar, RecommendationRow, SectionHeader, WorkRow } from "./rows";
 import type { PanelStyles } from "./styles";
 
 /** Rows per work list before the rest is left to the Board. */
 const LIST_LIMIT = 8;
+
+/** Labels listed before the rest is summarised. */
+const LABEL_LIMIT = 12;
 
 /** Steps of the critical chain listed before it is summarised. */
 const CHAIN_LIMIT = 12;
 
 /**
  * The default view, built around the questions a reader opens the panel with:
- * how far along is this, what is moving, what can start now, what needs a
- * person, and how long the remaining chain of dependencies is.
+ * how far along is this, what is moving, what can start now, how the project's
+ * own labels spread over open work, and how long the remaining chain of
+ * dependencies is.
  */
 export function OverviewView({
   styles,
@@ -85,8 +83,7 @@ export function OverviewView({
   const active = workIn(project, "active");
   const held = workIn(project, "held");
   const ready = workIn(project, "ready");
-  const attention = attentionWork(project);
-  const showPriority = project.priorityVaries;
+  const context = facetContext(project);
 
   const list = (title: string, items: typeof ready, empty: string | null, showState: boolean) =>
     items.length === 0 && empty === null ? null : (
@@ -100,7 +97,7 @@ export function OverviewView({
             theme={theme}
             item={item}
             showState={showState}
-            showPriority={showPriority}
+            context={context}
             note={item.state === "ready" ? item.action : null}
             selected={selectedId === item.id}
             onSelect={onSelect}
@@ -131,10 +128,8 @@ export function OverviewView({
               : "Nothing can start right now.",
           false,
         )}
-        {list("Needs a human", attention, null, true)}
-        {attention.length === 0 ? null : (
-          <Text style={styles.muted}>Read from labels such as human-approval; Beads has no field for it.</Text>
-        )}
+        {list("Other status", workIn(project, "other"), null, true)}
+        <Labels styles={styles} project={project} />
         <Chain styles={styles} theme={theme} project={project} selectedId={selectedId} onSelect={onSelect} />
       </View>
     </View>
@@ -287,8 +282,8 @@ function PackageRow({
         styles={styles}
         theme={theme}
         id={pkg.id}
-        // Work filed directly on the epic, beside its packages.
-        title={pkg.id !== null && pkg.id === root.id ? "Directly under this epic" : pkg.title}
+        // Work filed directly on the top-level issue, beside its sub-groups.
+        title={pkg.id !== null && pkg.id === root.id ? `Directly under ${root.id}` : pkg.title}
         done={pkg.done}
         total={pkg.total}
         counts={pkg.counts}
@@ -404,7 +399,7 @@ function Chain({
           theme={theme}
           item={{ ...item, critical: false }}
           showState
-          showPriority={false}
+          context={{ ...facetContext(project), showPriority: false }}
           selected={selectedId === item.id}
           onSelect={onSelect}
         />
@@ -412,6 +407,42 @@ function Chain({
       {chain.length > CHAIN_LIMIT ? (
         <Text style={styles.muted}>+{chain.length - CHAIN_LIMIT} more steps.</Text>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * The project's own labels over open work, as written. What a label means is
+ * the project's business, so each is only counted: how much open work carries
+ * it and how much of that can start now.
+ */
+function Labels({ styles, project }: { readonly styles: PanelStyles; readonly project: ProjectModel }) {
+  if (project.labels.length === 0) return null;
+  const common = [...project.commonLabels].sort();
+  return (
+    <View style={styles.listGroup}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Labels on open work</Text>
+        <Text style={styles.sectionMeta}>{project.labels.length}</Text>
+      </View>
+      {project.labels.slice(0, LABEL_LIMIT).map((stat) => (
+        <View
+          key={stat.label}
+          style={styles.labelRow}
+          accessibilityLabel={`label ${stat.label}, ${stat.live} open, ${stat.ready} ready`}
+        >
+          <Text style={styles.labelFacet}>{stat.label}</Text>
+          <Text style={styles.boardLaneCount}>
+            {stat.live} open{stat.ready === 0 ? "" : ` · ${stat.ready} ready`}
+          </Text>
+        </View>
+      ))}
+      {project.labels.length > LABEL_LIMIT ? (
+        <Text style={styles.muted}>+{project.labels.length - LABEL_LIMIT} more; group the Board by label to see them.</Text>
+      ) : null}
+      {common.length === 0 ? null : (
+        <Text style={styles.muted}>On every open item, so not listed: {common.join(", ")}.</Text>
+      )}
     </View>
   );
 }
