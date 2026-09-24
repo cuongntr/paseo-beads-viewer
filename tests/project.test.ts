@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProject, compareIds, workIn, workStateOf } from "../client/project";
+import { buildProject, compareIds, workIn, workStateOf, workTracks } from "../client/project";
 import type { Recommendation, Track } from "../shared/beads";
 import { issue, plannedProject, project } from "./work-fixtures";
 
@@ -313,5 +313,31 @@ describe("working-set fallback", () => {
     expect(model.byId.has("ignored")).toBe(false);
     expect(model.byId.get("r")?.state).toBe("waiting");
     expect(model.byId.get("t")?.state).toBe("ready");
+  });
+});
+
+describe("plan tracks", () => {
+  const item = (id: string) => ({ id, title: id, status: "open", priority: 1, unblocks: [] });
+
+  it("drops containers and takes them out of the track's total", () => {
+    // Shaped after the demo project: bv listed 9 items, 5 of them epics.
+    const model = project(plannedProject);
+    const [track] = workTracks(
+      [{ id: "track-A", reason: null, items: ["p", "p.1", "p.2", "p.10", "p.1.2", "p.2.1"].map(item), totalItems: 6 }],
+      model,
+    );
+    expect(track?.items.map((entry) => entry.id)).toEqual(["p.1.2", "p.2.1"]);
+    expect(track?.totalItems).toBe(2);
+  });
+
+  it("keeps items past the payload cap in the total, since they are unknown", () => {
+    const model = project(plannedProject);
+    const [track] = workTracks([{ id: "t", reason: null, items: ["p", "p.2.1"].map(item), totalItems: 30 }], model);
+    expect(track?.items).toHaveLength(1);
+    expect(track?.totalItems).toBe(29);
+  });
+
+  it("drops a track that holds only containers", () => {
+    expect(workTracks([{ id: "t", reason: null, items: [item("p")], totalItems: 1 }], project(plannedProject))).toEqual([]);
   });
 });

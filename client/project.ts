@@ -601,3 +601,21 @@ function labelsOf(live: readonly WorkItem[]): Pick<ProjectModel, "commonLabels" 
 
   return { commonLabels: common, labels };
 }
+
+/**
+ * Plan tracks with containers removed: `bv` lists a container as actionable
+ * when nothing blocks it, but nobody works on one directly. A track's total
+ * drops by the containers removed, or it would read "9 items (4 shown)" when
+ * the other five were epics shown on purpose nowhere. Items past the payload
+ * cap are unknown, so they stay in the total and still read as not shown.
+ */
+export function workTracks(tracks: readonly Track[], project: ProjectModel): Track[] {
+  const result: Track[] = [];
+  for (const track of tracks) {
+    const items = track.items.filter((item) => project.byId.get(item.id)?.container !== true);
+    if (items.length === 0) continue;
+    const removed = track.items.length - items.length;
+    result.push({ ...track, items, totalItems: Math.max(items.length, track.totalItems - removed) });
+  }
+  return result;
+}

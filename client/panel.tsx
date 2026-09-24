@@ -21,7 +21,7 @@ import { ALL_WORK, buildBoard, type BoardFilter } from "./board";
 import { BoardView } from "./board-view";
 import { authorityLabel, authorityTone, errorLabel, relativeAge, toneColor } from "./format";
 import { OverviewView } from "./overview-view";
-import { buildProject, isParked, workIn, type ProjectModel } from "./project";
+import { buildProject, isParked, workIn, workTracks, type ProjectModel } from "./project";
 import {
   AlertRow,
   BlockerRow,
@@ -585,9 +585,7 @@ function isSerious(severity: string): boolean {
  * when nothing blocks it, but nobody works on an epic directly.
  */
 function planTracks(data: DashboardResult, project: ProjectModel): DashboardResult["tracks"] {
-  return data.tracks
-    .map((track) => ({ ...track, items: track.items.filter((item) => project.byId.get(item.id)?.container !== true) }))
-    .filter((track) => track.items.length > 0);
+  return workTracks(data.tracks, project);
 }
 
 const EMPTY_PROJECT_INPUT = {
