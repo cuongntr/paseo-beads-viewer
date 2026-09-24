@@ -25,6 +25,7 @@
   },
   "files": [
     "client",
+    "images",
     "server",
     "shared",
     "index.client.tsx",

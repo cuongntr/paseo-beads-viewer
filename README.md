@@ -11,6 +11,28 @@ The plugin never invokes a mutating `br` or `bd` command. There is no claim, clo
 update, or create path in the code. `bv` may refresh its own compatibility export while
 loading a `bd`/Dolt workspace, so `bv` calls are serialized per workspace.
 
+## Screenshots
+
+Shown on a made-up demo project.
+
+**Overview**: progress per parent, what is in progress, held and ready now, the project's labels
+over open work, and the critical chain.
+
+![Overview](images/overview.png)
+
+**Board**: one column per work state in the order work moves, filtered by parent or label, each
+column with its definition.
+
+![Board](images/board.png)
+
+**Plan**: `bv`'s parallel execution tracks, containers left out.
+
+![Plan](images/plan.png)
+
+**Risks**: stuck and parked work, alerts by severity, and the keystones that unblock the most.
+
+![Risks](images/risks.png)
+
 ## Requirements
 
 - Paseo `>=0.8.0` (daemon and app).
