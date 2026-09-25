@@ -199,7 +199,9 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   Projects, Linear and Jira all default to plain columns, with swimlanes an opt-in. So grouping
   became a filter that narrows every column at once, and every card names its direct parent
   instead of sitting under it. The filter is a searchable multi-select, because a chip per parent
-  stopped scaling past a handful of epics. Choices of one kind widen and of different kinds
+  stopped scaling past a handful of epics. On a wide panel its list floats over the columns
+  instead of pushing them down, and a press anywhere else on the board closes it; on a phone it
+  opens in the host's `Modal`, since a floating list there is too small to tap. Choices of one kind widen and of different kinds
   narrow: any chosen parent's subtree AND any chosen label, as GitHub Projects and Linear combine
   filters. Options come from the data; choices that stop matching drop out.
 - **Cards show how long ago work last changed, as a bare "9m ago".** Beads keeps `updated_at` and

@@ -115,7 +115,8 @@ export interface PanelStyles {
   readonly boardColumnCount: TextStyle;
   readonly boardColumnBody: ViewStyle;
   readonly boardCardParent: TextStyle;
-  readonly filterBar: ViewStyle;
+  readonly overlayBackdrop: ViewStyle;
+  readonly filterPopover: ViewStyle;
   readonly filterChosen: ViewStyle;
   readonly filterPanel: ViewStyle;
   readonly filterSearch: TextStyle;
@@ -464,10 +465,12 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     boardColumnTitle: { color: theme.colors.foreground, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
     boardColumnCount: { color: theme.colors.foregroundMuted, fontSize: 10 },
     boardColumnBody: { gap: 6, paddingBottom: gutter * 2 },
-    filterBar: { gap: 8 },
+    /** Catches a press anywhere on the board outside an open dropdown. */
+    overlayBackdrop: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 },
+    /** The dropdown floats over the columns, anchored under the filter bar. */
+    filterPopover: { position: "absolute", left: gutter, zIndex: 11, width: 480, maxWidth: "90%" },
     /** Chosen parents and labels, each removable; wraps rather than scrolls. */
     filterChosen: { flexDirection: "row", flexWrap: "wrap", gap: 6, flexGrow: 1, flexShrink: 1, minWidth: 0 },
-    /** Laid out inline under the bar rather than floating, so no absolute positioning is needed. */
     filterPanel: {
       gap: 6,
       padding: 10,
@@ -475,7 +478,6 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
       borderColor: theme.colors.border,
       borderRadius: 4,
       backgroundColor: theme.colors.surface1,
-      maxWidth: 560,
     },
     filterSearch: { flexGrow: 1 },
     filterList: { maxHeight: 280 },
