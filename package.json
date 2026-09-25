@@ -1,6 +1,6 @@
 {
   "name": "beads-viewer",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Read-only Beads console for Paseo: project progress, ready and waiting work, the critical chain, and a whole-project board, read through bv.",
   "license": "MIT",
   "author": "cuongntr",
