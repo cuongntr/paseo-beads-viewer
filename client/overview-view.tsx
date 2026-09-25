@@ -2,7 +2,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { Pressable, Text, View } from "react-native";
 import type { ProjectHealth, Recommendation } from "../shared/beads";
 import { percentDone, stateDescription, toneColor } from "./format";
-import { workIn, type ProjectModel, type WorkPackage, type WorkRoot, type WorkState } from "./project";
+import { recentlyUpdated, workIn, type ProjectModel, type WorkPackage, type WorkRoot, type WorkState } from "./project";
 import { Empty, facetContext, ProgressBar, RecommendationRow, SectionHeader, WorkRow } from "./rows";
 import type { PanelStyles } from "./styles";
 
@@ -27,6 +27,7 @@ export function OverviewView({
   project,
   health,
   recommendations,
+  now,
   selectedId,
   onSelect,
 }: {
@@ -35,6 +36,8 @@ export function OverviewView({
   readonly project: ProjectModel;
   readonly health: ProjectHealth | null;
   readonly recommendations: readonly Recommendation[];
+  /** The clock activity ages are measured against. */
+  readonly now: number;
   readonly selectedId: string | null;
   readonly onSelect: (issueId: string) => void;
 }) {
@@ -83,7 +86,8 @@ export function OverviewView({
   const active = workIn(project, "active");
   const held = workIn(project, "held");
   const ready = workIn(project, "ready");
-  const context = facetContext(project);
+  const context = facetContext(project, now);
+  const recent = recentlyUpdated(project);
 
   const list = (title: string, items: typeof ready, empty: string | null, showState: boolean) =>
     items.length === 0 && empty === null ? null : (
@@ -117,6 +121,7 @@ export function OverviewView({
       </View>
       <View style={styles.overviewColumn}>
         {list("In progress", active, null, false)}
+        {list("Recently updated", recent, null, true)}
         {list("Held", held, null, true)}
         {list(
           "Ready now",
@@ -130,7 +135,7 @@ export function OverviewView({
         )}
         {list("Other status", workIn(project, "other"), null, true)}
         <Labels styles={styles} project={project} />
-        <Chain styles={styles} theme={theme} project={project} selectedId={selectedId} onSelect={onSelect} />
+        <Chain styles={styles} theme={theme} project={project} now={now} selectedId={selectedId} onSelect={onSelect} />
       </View>
     </View>
   );
@@ -373,12 +378,14 @@ function Chain({
   styles,
   theme,
   project,
+  now,
   selectedId,
   onSelect,
 }: {
   readonly styles: PanelStyles;
   readonly theme: PluginTheme;
   readonly project: ProjectModel;
+  readonly now: number;
   readonly selectedId: string | null;
   readonly onSelect: (issueId: string) => void;
 }) {
@@ -413,7 +420,7 @@ function Chain({
           theme={theme}
           item={{ ...item, critical: false }}
           showState
-          context={{ ...facetContext(project), showPriority: false }}
+          context={{ ...facetContext(project, now), showPriority: false }}
           selected={selectedId === item.id}
           onSelect={onSelect}
         />

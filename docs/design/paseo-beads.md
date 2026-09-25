@@ -197,9 +197,15 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   columns. In use that matrix left most cells empty, repeated a card in every label lane it
   carried, and made the reader scan two ways at once — and it is not what boards do: GitHub
   Projects, Linear and Jira all default to plain columns, with swimlanes an opt-in. So grouping
-  became a filter that narrows every column at once (a parent's whole subtree, or one of the
-  project's labels, with options discovered from the data), and every card names its direct
-  parent instead of sitting under it. Compact turns the columns into a state picker over one
+  became a filter that narrows every column at once, and every card names its direct parent
+  instead of sitting under it. The filter is a searchable multi-select, because a chip per parent
+  stopped scaling past a handful of epics. Choices of one kind widen and of different kinds
+  narrow: any chosen parent's subtree AND any chosen label, as GitHub Projects and Linear combine
+  filters. Options come from the data; choices that stop matching drop out.
+- **Cards show how long ago work last changed, as a bare "9m ago".** Beads keeps `updated_at` and
+  `closed_at` but no status-change time, so the age is of the last change of any kind; done work
+  counts from its close. The times come from the tracker's CSV read, which falls back to the base
+  columns when a tracker rejects them. The Overview lists the five most recent changes. Compact turns the columns into a state picker over one
   list. There is no drag, drop, or mutation control.
 - **Edge direction is data, not intuition.** `bv --robot-graph` emits `blocks` as `from` → `to`
   meaning from-is-blocked-by-to, but `parent-child` as child → parent. Both were established by

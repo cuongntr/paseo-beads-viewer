@@ -115,8 +115,15 @@ export interface PanelStyles {
   readonly boardColumnCount: TextStyle;
   readonly boardColumnBody: ViewStyle;
   readonly boardCardParent: TextStyle;
-  readonly filterScroll: ViewStyle;
-  readonly filterRow: ViewStyle;
+  readonly filterBar: ViewStyle;
+  readonly filterChosen: ViewStyle;
+  readonly filterPanel: ViewStyle;
+  readonly filterSearch: TextStyle;
+  readonly filterList: ViewStyle;
+  readonly filterListContent: ViewStyle;
+  readonly filterOption: ViewStyle;
+  readonly filterOptionNested: ViewStyle;
+  readonly filterOptionText: TextStyle;
   readonly filterChip: ViewStyle;
   readonly filterChipLabel: ViewStyle;
   readonly filterChipSelected: ViewStyle;
@@ -457,8 +464,32 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     boardColumnTitle: { color: theme.colors.foreground, fontSize: 11, fontWeight: "700", letterSpacing: 0.4 },
     boardColumnCount: { color: theme.colors.foregroundMuted, fontSize: 10 },
     boardColumnBody: { gap: 6, paddingBottom: gutter * 2 },
-    filterScroll: { flexGrow: 1, flexShrink: 1, minWidth: 0 },
-    filterRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+    filterBar: { gap: 8 },
+    /** Chosen parents and labels, each removable; wraps rather than scrolls. */
+    filterChosen: { flexDirection: "row", flexWrap: "wrap", gap: 6, flexGrow: 1, flexShrink: 1, minWidth: 0 },
+    /** Laid out inline under the bar rather than floating, so no absolute positioning is needed. */
+    filterPanel: {
+      gap: 6,
+      padding: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 4,
+      backgroundColor: theme.colors.surface1,
+      maxWidth: 560,
+    },
+    filterSearch: { flexGrow: 1 },
+    filterList: { maxHeight: 280 },
+    filterListContent: { gap: 2, paddingBottom: 4 },
+    filterOption: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      minHeight: compact ? 38 : 28,
+      paddingHorizontal: 6,
+      borderRadius: 3,
+    },
+    filterOptionNested: { paddingLeft: 24 },
+    filterOptionText: { flexShrink: 1, color: theme.colors.foreground, fontSize: 12 },
     filterChip: {
       flexDirection: "row",
       alignItems: "center",

@@ -170,6 +170,13 @@ export const BoardIssueSchema = z.object({
   type: z.string().nullable(),
   /** From the tracker overlay; null when unassigned or the overlay is absent. */
   assignee: z.string().nullable(),
+  /**
+   * Last change of any kind, from the tracker overlay. Beads records no
+   * separate status-change time, so this is "updated", not "moved".
+   */
+  updatedAt: z.string().nullable(),
+  /** When the issue was closed, from the tracker overlay. */
+  closedAt: z.string().nullable(),
 });
 export type BoardIssue = z.output<typeof BoardIssueSchema>;
 

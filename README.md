@@ -107,7 +107,8 @@ rg -n "document\.|window\.|localStorage|navigator\.|<[a-z]+[ >]|className=|onCli
 - Only an explicit allowlist of read-only commands can run: `bv --version`,
   `bv --robot-triage`, `bv --robot-plan`, `bv --robot-alerts`, `bv --robot-graph`,
   `bv --robot-search`,
-  `<tracker> --db <validated-route> list --status all --fields id,issue_type,assignee --format csv`,
+  `<tracker> --db <validated-route> list --status all --fields id,issue_type,assignee,updated_at,closed_at --format csv`
+  (retried with `--fields id,issue_type,assignee` when the tracker rejects the timestamps),
   and `<tracker> --db <validated-route> show --json -- <id>`. `br` reads also pass
   `--no-auto-import --no-auto-flush`. Bare `bv` is never invoked. Neither tracker argv takes any
   user input beyond the validated route and, for `show`, a pattern-checked issue id.
@@ -163,8 +164,10 @@ rg -n "document\.|window\.|localStorage|navigator\.|<[a-z]+[ >]|className=|onCli
 - The **Board** is a plain board: one column per work state in the order work moves — Ready,
   Waiting, In progress, Held and Other status (each only when non-empty), and Done (only with
   **Show done**) — each column
-  one list that scrolls on its own, with no swimlanes. A **Filter** narrows every column at once
-  to one parent's subtree or one of the project's labels; each card names its parent. On a phone
+  one list that scrolls on its own, with no swimlanes. The **Filter** is a searchable
+  multi-select over the project's parents and labels: work under any chosen parent, carrying any
+  chosen label. Each card names its parent and shows how long ago it last changed ("9m ago";
+  Beads records no separate status-change time). On a phone
   the columns become a state picker over one list. Issues that other issues name as parent are
   filter options and card context, never cards. Each column renders at most 60 cards with the
   rest reported as `+N more`, and a project past 2000 issues drops closed issues from the payload

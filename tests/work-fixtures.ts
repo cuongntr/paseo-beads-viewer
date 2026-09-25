@@ -14,6 +14,8 @@ export function issue(overrides: Partial<BoardIssue> & { id: string }): BoardIss
     childCount: 0,
     type: "task",
     assignee: null,
+    updatedAt: null,
+    closedAt: null,
     ...overrides,
   };
 }

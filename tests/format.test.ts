@@ -11,6 +11,7 @@ import {
   shortHash,
   statusIconName,
   statusLabel,
+  activityLabel,
   stateDescription,
   stateTone,
   toneColor,
@@ -80,6 +81,14 @@ describe("authority presentation", () => {
 });
 
 describe("status and severity tones", () => {
+  it("shows a bare age: the update time, or the close time once done", () => {
+    const now = Date.parse("2026-09-24T10:09:00Z");
+    const base = { updatedAt: "2026-09-24T10:00:00Z", closedAt: null };
+    expect(activityLabel({ ...base, state: "active" }, now)).toBe("9m ago");
+    expect(activityLabel({ state: "done", updatedAt: "2026-09-20T00:00:00Z", closedAt: "2026-09-24T08:09:00Z" }, now)).toBe("2h ago");
+    expect(activityLabel({ state: "ready", updatedAt: null, closedAt: null }, now)).toBeNull();
+  });
+
   it("defines every work state in Beads' own terms", () => {
     expect(stateDescription("ready")).toContain("br ready");
     expect(stateDescription("waiting")).toContain("br blocked");

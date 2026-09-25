@@ -37,6 +37,9 @@ import { createPanelStyles, type PanelStyles } from "./styles";
 
 const DASHBOARD_STALE_MS = 10_000;
 
+/** How often relative ages re-render; minutes are their finest useful unit. */
+const AGE_TICK_MS = 30_000;
+
 /** Currently inspected issue id, or nothing selected. */
 type Selection = string | null;
 
@@ -81,6 +84,12 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   // its live issues under closed ones.
   const [boardFilter, setBoardFilter] = useState<BoardFilter>(ALL_WORK);
   const [showDone, setShowDone] = useState(false);
+  // Ages like "9m ago" move with the clock, not only when bv is re-read.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), AGE_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   // Slash commands and Command Center actions may target the panel before it mounts.
   const focusRevision = useSyncExternalStore(subscribeIssueFocus, issueFocusRevision, issueFocusRevision);
@@ -358,6 +367,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       project={project}
       board={boardModel}
       compact={layout.compact}
+      now={now}
       selectedId={selectedId}
       onSelect={setSelectedId}
       onFilterChange={setBoardFilter}
@@ -381,6 +391,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       project={project}
       health={data.health}
       recommendations={data.sections.triage.status === "ok" ? data.recommendations : []}
+      now={now}
       selectedId={selectedId}
       onSelect={setSelectedId}
     />
@@ -391,6 +402,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       data={data}
       project={project}
       viewMode={viewMode}
+      now={now}
       selectedId={selectedId}
       onSelect={setSelectedId}
     />
@@ -666,6 +678,7 @@ function ListView({
   data,
   project,
   viewMode,
+  now,
   selectedId,
   onSelect,
 }: {
@@ -674,6 +687,7 @@ function ListView({
   data: DashboardResult;
   project: ProjectModel;
   viewMode: ListMode;
+  now: number;
   selectedId: Selection;
   onSelect: (issueId: string) => void;
 }) {
@@ -722,7 +736,17 @@ function ListView({
     );
   }
 
-  return <RisksView styles={styles} theme={theme} data={data} project={project} selectedId={selectedId} onSelect={onSelect} />;
+  return (
+    <RisksView
+      styles={styles}
+      theme={theme}
+      data={data}
+      project={project}
+      now={now}
+      selectedId={selectedId}
+      onSelect={onSelect}
+    />
+  );
 }
 
 /**
@@ -735,6 +759,7 @@ function RisksView({
   theme,
   data,
   project,
+  now,
   selectedId,
   onSelect,
 }: {
@@ -742,6 +767,7 @@ function RisksView({
   theme: PluginWorkspacePanelProps["theme"];
   data: DashboardResult;
   project: ProjectModel;
+  now: number;
   selectedId: Selection;
   onSelect: (issueId: string) => void;
 }) {
@@ -791,7 +817,7 @@ function RisksView({
               theme={theme}
               item={item}
               showState
-              context={facetContext(project)}
+              context={facetContext(project, now)}
               selected={selectedId === item.id}
               onSelect={onSelect}
             />

@@ -334,6 +334,8 @@ export function normalizeBoardIssues(
       childCount: childCounts.get(id) ?? 0,
       type: facet?.type ?? null,
       assignee: facet?.assignee ?? null,
+      updatedAt: facet?.updatedAt ?? null,
+      closedAt: facet?.closedAt ?? null,
     };
     if (isClosedStatus(status)) closed.push(issue);
     else open.push(issue);
@@ -366,6 +368,9 @@ export function normalizeBoardIssues(
 export interface TrackerFacet {
   readonly type: string | null;
   readonly assignee: string | null;
+  /** Last change of any kind; null when the tracker did not supply it. */
+  readonly updatedAt: string | null;
+  readonly closedAt: string | null;
 }
 
 export interface TrackerFacets {
@@ -375,6 +380,13 @@ export interface TrackerFacets {
 }
 
 export const EMPTY_FACETS: TrackerFacets = { ok: false, byId: new Map() };
+
+/** An ISO timestamp the client can parse, or null; a malformed cell never becomes a date. */
+function readTimestamp(cell: string | undefined): string | null {
+  const value = cell?.trim() ?? "";
+  if (value.length === 0 || Number.isNaN(Date.parse(value))) return null;
+  return new Date(value).toISOString();
+}
 
 /** Bounds on the facet CSV, so a runaway tracker cannot allocate without limit. */
 const FACET_MAX_ROWS = 20_000;
@@ -461,10 +473,13 @@ export function readCsvRecords(
   return { records, truncated: false };
 }
 
-const FACET_HEADER: readonly string[] = ["id", "issue_type", "assignee"];
+const FACET_HEADER: readonly string[] = ["id", "issue_type", "assignee", "updated_at", "closed_at"];
+
+/** Accepts the timestamped read, or the base three columns when the tracker rejected the timestamps. */
+const FACET_WIDTHS: readonly number[] = [5, 3];
 
 /**
- * Parses `id,issue_type,assignee` from `br`/`bd list`.
+ * Parses `id,issue_type,assignee[,updated_at,closed_at]` from `br`/`bd list`.
  *
  * A partial overlay is worse than none: an issue whose row was dropped is
  * indistinguishable from a genuinely untyped one, and it would sit in the
@@ -478,16 +493,18 @@ export function parseTrackerFacets(csv: string): TrackerFacets {
 
   const byId = new Map<string, TrackerFacet>();
   for (const [index, record] of records.entries()) {
-    if (record.length !== FACET_HEADER.length) continue;
+    if (!FACET_WIDTHS.includes(record.length)) continue;
     const id = record[0]?.trim() ?? "";
     if (id.length === 0) continue;
     // Tolerate a tracker that omits the header rather than losing the first row.
-    if (index === 0 && FACET_HEADER.every((name, column) => record[column]?.trim() === name)) continue;
+    if (index === 0 && record.every((cell, column) => cell.trim() === FACET_HEADER[column])) continue;
     const type = record[1]?.trim() ?? "";
     const assignee = record[2]?.trim() ?? "";
     byId.set(id, {
       type: type.length === 0 ? null : type.toLowerCase(),
       assignee: assignee.length === 0 ? null : assignee,
+      updatedAt: readTimestamp(record[3]),
+      closedAt: readTimestamp(record[4]),
     });
   }
   return { ok: byId.size > 0, byId };

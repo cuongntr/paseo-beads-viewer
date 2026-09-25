@@ -1,13 +1,17 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { useState, type ReactNode } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import {
+  ALL_WORK,
   boardFilters,
-  filterKey,
+  isFiltered,
   parentLabel,
+  searchFilters,
+  toggleFilter,
   type BoardColumn,
   type BoardFilter,
+  type BoardFilterOption,
   type BoardModel,
 } from "./board";
 import { stateDescription, stateIconName, stateLabel, stateTone, toneColor } from "./format";
@@ -17,9 +21,9 @@ import type { PanelStyles } from "./styles";
 
 /**
  * Read-only project board: one column per work state, each an independent
- * list, narrowed by one filter. On a compact panel the columns become a state
- * picker over a single list, as board apps do on a phone. There is no drag,
- * drop, or mutation affordance anywhere in this file.
+ * list, narrowed by a multi-select filter. On a compact panel the columns
+ * become a state picker over a single list, as board apps do on a phone. There
+ * is no drag, drop, or mutation affordance anywhere in this file.
  */
 export function BoardView({
   styles,
@@ -27,6 +31,7 @@ export function BoardView({
   project,
   board,
   compact,
+  now,
   selectedId,
   onSelect,
   onFilterChange,
@@ -37,6 +42,8 @@ export function BoardView({
   readonly project: ProjectModel;
   readonly board: BoardModel;
   readonly compact: boolean;
+  /** The clock card ages are measured against. */
+  readonly now: number;
   readonly selectedId: string | null;
   readonly onSelect: (issueId: string) => void;
   readonly onFilterChange: (filter: BoardFilter) => void;
@@ -44,8 +51,7 @@ export function BoardView({
 }) {
   // Compact shows one column at a time; start where work can be picked up.
   const [compactState, setCompactState] = useState<WorkState>("ready");
-  const context = facetContext(project);
-  const activeKey = filterKey(board.filter);
+  const context = facetContext(project, now);
 
   const caveats = [
     project.complete
@@ -56,59 +62,30 @@ export function BoardView({
 
   const controls = (
     <View style={compact ? styles.boardHeaderStacked : styles.boardHeader}>
-      <View style={styles.boardControlRow}>
-        <Text style={styles.segmentCaption}>Filter</Text>
-        <ScrollView
-          horizontal
-          style={styles.filterScroll}
-          contentContainerStyle={styles.filterRow}
-          accessibilityRole="tablist"
-          accessibilityLabel="Filter the board"
-        >
-          {boardFilters(project).map((option) => {
-            const selected = option.key === activeKey;
-            return (
-              <Pressable
-                key={option.key}
-                accessibilityRole="tab"
-                accessibilityState={{ selected }}
-                accessibilityLabel={`Show ${option.label}, ${option.live} open`}
-                onPress={() => onFilterChange(option.filter)}
-                style={({ pressed }) => [
-                  styles.filterChip,
-                  option.filter.kind === "label" ? styles.filterChipLabel : null,
-                  selected ? styles.filterChipSelected : null,
-                  pressed ? styles.actionPressed : null,
-                ]}
-              >
-                <Text
-                  style={selected ? styles.segmentLabelSelected : styles.segmentLabel}
-                  numberOfLines={1}
-                >
-                  {option.depth > 0 ? "› " : ""}
-                  {option.label}
-                </Text>
-                <Text style={styles.switcherCount}>{option.live}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-        <Pressable
-          accessibilityRole="switch"
-          accessibilityState={{ checked: board.showDone }}
-          accessibilityLabel="Show finished work"
-          onPress={() => onShowDoneChange(!board.showDone)}
-          style={({ pressed }) => [
-            styles.filterChip,
-            board.showDone ? styles.filterChipSelected : null,
-            pressed ? styles.actionPressed : null,
-          ]}
-        >
-          <Text style={board.showDone ? styles.segmentLabelSelected : styles.segmentLabel}>
-            {board.showDone ? "Showing done" : "Show done"}
-          </Text>
-        </Pressable>
-      </View>
+      <FilterBar
+        styles={styles}
+        theme={theme}
+        options={boardFilters(project)}
+        filter={board.filter}
+        onChange={onFilterChange}
+        trailing={
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: board.showDone }}
+            accessibilityLabel="Show finished work"
+            onPress={() => onShowDoneChange(!board.showDone)}
+            style={({ pressed }) => [
+              styles.filterChip,
+              board.showDone ? styles.filterChipSelected : null,
+              pressed ? styles.actionPressed : null,
+            ]}
+          >
+            <Text style={board.showDone ? styles.segmentLabelSelected : styles.segmentLabel}>
+              {board.showDone ? "Showing done" : "Show done"}
+            </Text>
+          </Pressable>
+        }
+      />
       {caveats.map((line) => (
         <Text key={line} style={styles.muted}>
           {line}
@@ -134,8 +111,12 @@ export function BoardView({
       styles={styles}
       theme={theme}
       item={item}
-      // The chosen parent is already the whole board's context.
-      parent={board.filter.kind === "parent" && board.filter.id === item.parentId ? null : parentLabel(item, project)}
+      // A single chosen parent is already the whole board's context.
+      parent={
+        board.filter.parents.length === 1 && board.filter.parents[0] === item.parentId
+          ? null
+          : parentLabel(item, project)
+      }
       showState={showState}
       context={context}
       selected={selectedId === item.id}
@@ -288,3 +269,147 @@ function Card({
     </Pressable>
   );
 }
+
+/** Options listed before the rest is left to the search box. */
+const FILTER_LIST_LIMIT = 80;
+
+/**
+ * The board's filter: a button summarising the choice, the choices themselves
+ * as removable chips, and on demand a searchable list to add more. A chip row
+ * of every parent stopped scaling once a project had more than a handful of
+ * epics; a list with search does not.
+ */
+function FilterBar({
+  styles,
+  theme,
+  options,
+  filter,
+  onChange,
+  trailing,
+}: {
+  readonly styles: PanelStyles;
+  readonly theme: PluginTheme;
+  readonly options: readonly BoardFilterOption[];
+  readonly filter: BoardFilter;
+  readonly onChange: (filter: BoardFilter) => void;
+  readonly trailing: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selected = (option: BoardFilterOption) =>
+    (option.kind === "parent" ? filter.parents : filter.labels).includes(option.value);
+  const chosen = options.filter(selected);
+  const shown = searchFilters(options, query);
+  const parents = shown.filter((option) => option.kind === "parent");
+  const labels = shown.filter((option) => option.kind === "label");
+  const count = chosen.length;
+
+  const row = (option: BoardFilterOption) => {
+    const on = selected(option);
+    return (
+      <Pressable
+        key={`${option.kind}:${option.value}`}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: on }}
+        accessibilityLabel={`${option.label}, ${option.live} open`}
+        onPress={() => onChange(toggleFilter(filter, option.kind, option.value))}
+        style={({ pressed }) => [
+          styles.filterOption,
+          option.depth > 0 ? styles.filterOptionNested : null,
+          pressed ? styles.actionPressed : null,
+        ]}
+      >
+        <Icon
+          name={on ? "CircleCheck" : "Circle"}
+          size={14}
+          color={on ? theme.colors.accent : theme.colors.foregroundMuted}
+        />
+        <Text style={option.kind === "label" ? styles.labelFacet : styles.filterOptionText} numberOfLines={1}>
+          {option.label}
+        </Text>
+        <Text style={styles.switcherCount}>{option.live}</Text>
+      </Pressable>
+    );
+  };
+
+  return (
+    <View style={styles.filterBar}>
+      <View style={styles.boardControlRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          accessibilityLabel={count === 0 ? "Filter: all work" : `Filter: ${count} selected`}
+          onPress={() => setOpen((current) => !current)}
+          style={({ pressed }) => [
+            styles.filterChip,
+            count > 0 ? styles.filterChipSelected : null,
+            pressed ? styles.actionPressed : null,
+          ]}
+        >
+          <Icon name="Filter" size={13} color={theme.colors.foregroundMuted} />
+          <Text style={count > 0 ? styles.segmentLabelSelected : styles.segmentLabel}>
+            {count === 0 ? "All work" : `${count} selected`}
+          </Text>
+          <Icon name={open ? "ChevronUp" : "ChevronDown"} size={13} color={theme.colors.foregroundMuted} />
+        </Pressable>
+        <View style={styles.filterChosen}>
+          {chosen.map((option) => (
+            <Pressable
+              key={`${option.kind}:${option.value}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${option.label} from the filter`}
+              onPress={() => onChange(toggleFilter(filter, option.kind, option.value))}
+              style={({ pressed }) => [
+                styles.filterChip,
+                option.kind === "label" ? styles.filterChipLabel : null,
+                pressed ? styles.actionPressed : null,
+              ]}
+            >
+              <Text style={styles.segmentLabelSelected} numberOfLines={1}>
+                {option.label}
+              </Text>
+              <Icon name="X" size={12} color={theme.colors.foregroundMuted} />
+            </Pressable>
+          ))}
+        </View>
+        {trailing}
+      </View>
+      {!open ? null : (
+        <View style={styles.filterPanel}>
+          <View style={styles.boardControlRow}>
+            <TextInput
+              accessibilityLabel="Find a parent or label"
+              placeholder="Find a parent or label"
+              placeholderTextColor={theme.colors.foregroundMuted}
+              value={query}
+              onChangeText={setQuery}
+              style={[styles.input, styles.filterSearch]}
+            />
+            {!isFiltered(filter) ? null : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Clear the filter"
+                onPress={() => onChange(ALL_WORK)}
+                style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
+              >
+                <Text style={styles.actionText}>Clear</Text>
+              </Pressable>
+            )}
+          </View>
+          <Text style={styles.muted}>Any chosen parent, and any chosen label.</Text>
+          <ScrollView style={styles.filterList} contentContainerStyle={styles.filterListContent}>
+            {parents.length === 0 ? null : <Text style={styles.detailSectionLabel}>PARENTS</Text>}
+            {parents.slice(0, FILTER_LIST_LIMIT).map(row)}
+            {labels.length === 0 ? null : <Text style={styles.detailSectionLabel}>LABELS</Text>}
+            {labels.slice(0, FILTER_LIST_LIMIT).map(row)}
+            {shown.length === 0 ? <Text style={styles.muted}>Nothing matches “{query}”.</Text> : null}
+            {parents.length > FILTER_LIST_LIMIT || labels.length > FILTER_LIST_LIMIT ? (
+              <Text style={styles.muted}>Type to narrow the list.</Text>
+            ) : null}
+          </ScrollView>
+        </View>
+      )}
+    </View>
+  );
+}
+

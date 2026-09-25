@@ -110,6 +110,19 @@ export function relativeAge(timestamp: string | null, now: number = Date.now()):
   return `${Math.round(hours / 24)}d ago`;
 }
 
+/**
+ * How long ago a piece of work last changed, as a bare "9m ago": readers take
+ * it as the update time without being told. Finished work counts from when it
+ * closed. Beads keeps no separate time for a status change.
+ */
+export function activityLabel(
+  item: { readonly state: WorkState; readonly updatedAt: string | null; readonly closedAt: string | null },
+  now: number,
+): string | null {
+  const at = item.state === "done" && item.closedAt !== null ? item.closedAt : item.updatedAt;
+  return relativeAge(at, now);
+}
+
 export function errorLabel(error: CommandError | null): string {
   if (error === null) return "Unavailable.";
   switch (error.code) {

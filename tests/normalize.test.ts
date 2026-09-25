@@ -514,9 +514,34 @@ describe("tracker facet overlay", () => {
   it("reads id, type and assignee, lowercasing the type and emptying blanks", () => {
     const facets = parseTrackerFacets(facetsCsv);
     expect(facets.ok).toBe(true);
-    expect(facets.byId.get("pib-cyhm")).toEqual({ type: "task", assignee: "ada" });
-    expect(facets.byId.get("pib-x1q9")).toEqual({ type: "epic", assignee: null });
+    expect(facets.byId.get("pib-cyhm")).toMatchObject({ type: "task", assignee: "ada" });
+    expect(facets.byId.get("pib-x1q9")).toMatchObject({ type: "epic", assignee: null });
     expect(facets.byId.get("pib-blk1")?.assignee).toBe("grace");
+  });
+
+  it("reads update and close times in the tracker's own format, and never invents one", () => {
+    // Shaped after `br 0.5.12 list --fields id,issue_type,assignee,updated_at,closed_at`.
+    const facets = parseTrackerFacets(
+      [
+        "id,issue_type,assignee,updated_at,closed_at",
+        "k-1,task,,2026-09-24T08:33:22.945311360+00:00,",
+        "k-2,task,alex,2026-09-24T08:33:24.534315951+00:00,2026-09-24T09:00:00+00:00",
+        "k-3,bug,,not a date,",
+      ].join("\n"),
+    );
+    expect(facets.byId.get("k-1")).toEqual({
+      type: "task",
+      assignee: null,
+      updatedAt: "2026-09-24T08:33:22.945Z",
+      closedAt: null,
+    });
+    expect(facets.byId.get("k-2")?.closedAt).toBe("2026-09-24T09:00:00.000Z");
+    expect(facets.byId.get("k-3")?.updatedAt).toBeNull();
+  });
+
+  it("still reads the three base columns from a tracker without timestamps", () => {
+    const facets = parseTrackerFacets("id,issue_type,assignee\nk-1,epic,ada");
+    expect(facets.byId.get("k-1")).toEqual({ type: "epic", assignee: "ada", updatedAt: null, closedAt: null });
   });
 
   it("applies the overlay onto the graph issues", () => {
@@ -555,8 +580,8 @@ describe("tracker facet overlay", () => {
     const facets = parseTrackerFacets(
       ['id,issue_type,assignee', 'a-1,task,"Nguyễn, Văn A"', 'a-2,epic,"She said ""hi"""'].join("\n"),
     );
-    expect(facets.byId.get("a-1")).toEqual({ type: "task", assignee: "Nguyễn, Văn A" });
-    expect(facets.byId.get("a-2")).toEqual({ type: "epic", assignee: 'She said "hi"' });
+    expect(facets.byId.get("a-1")).toMatchObject({ type: "task", assignee: "Nguyễn, Văn A" });
+    expect(facets.byId.get("a-2")).toMatchObject({ type: "epic", assignee: 'She said "hi"' });
   });
 
   it("keeps a row whose quoted field spans a newline", () => {
@@ -580,7 +605,7 @@ describe("tracker facet overlay", () => {
 
   it("keeps the first row when the tracker omits the header", () => {
     const facets = parseTrackerFacets("a-1,epic,ada\na-2,task,");
-    expect(facets.byId.get("a-1")).toEqual({ type: "epic", assignee: "ada" });
+    expect(facets.byId.get("a-1")).toMatchObject({ type: "epic", assignee: "ada" });
     expect(facets.byId.size).toBe(2);
   });
 

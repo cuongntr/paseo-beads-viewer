@@ -76,6 +76,9 @@ export interface WorkItem {
   readonly assignee: string | null;
   readonly type: string | null;
   readonly labels: readonly string[];
+  /** Last change of any kind; Beads keeps no separate status-change time. */
+  readonly updatedAt: string | null;
+  readonly closedAt: string | null;
   /** Ids of blockers that are still open. */
   readonly blockedBy: readonly string[];
   /**
@@ -239,7 +242,18 @@ export function buildProject(input: ProjectInput): ProjectModel {
 
 type Seed = Pick<
   WorkItem,
-  "id" | "title" | "status" | "priority" | "assignee" | "type" | "labels" | "blockedBy" | "unblocksCount" | "parentId"
+  | "id"
+  | "title"
+  | "status"
+  | "priority"
+  | "assignee"
+  | "type"
+  | "labels"
+  | "blockedBy"
+  | "unblocksCount"
+  | "parentId"
+  | "updatedAt"
+  | "closedAt"
 > & { readonly childCount: number };
 
 /**
@@ -299,6 +313,8 @@ function seedsFromGraph(issues: readonly BoardIssue[]): Map<string, Seed> {
       unblocksCount: issue.unblocksCount,
       parentId: issue.parentId,
       childCount: issue.childCount,
+      updatedAt: issue.updatedAt,
+      closedAt: issue.closedAt,
     });
   }
   return seeds;
@@ -328,6 +344,8 @@ function seedsFromWorkingSet(
       unblocksCount: recommendation.unblocks.length,
       parentId: null,
       childCount: 0,
+      updatedAt: null,
+      closedAt: null,
     });
   }
   for (const track of tracks) {
@@ -345,6 +363,8 @@ function seedsFromWorkingSet(
         unblocksCount: item.unblocks.length,
         parentId: null,
         childCount: 0,
+        updatedAt: null,
+        closedAt: null,
       });
     }
   }
@@ -619,3 +639,25 @@ export function workTracks(tracks: readonly Track[], project: ProjectModel): Tra
   }
   return result;
 }
+
+/** Items the "Recently updated" list shows. */
+export const RECENT_LIMIT = 5;
+
+/**
+ * The work that changed most recently, closed work included, newest first. A
+ * closed item counts from when it closed. Work with no timestamp is left out
+ * rather than guessed, so this is empty when the tracker gave none.
+ */
+export function recentlyUpdated(project: ProjectModel, limit = RECENT_LIMIT): readonly WorkItem[] {
+  const stamped = project.work
+    .map((item) => ({ item, at: Date.parse(lastActivity(item) ?? "") }))
+    .filter((entry) => !Number.isNaN(entry.at));
+  stamped.sort((left, right) => right.at - left.at || compareIds(left.item.id, right.item.id));
+  return stamped.slice(0, limit).map((entry) => entry.item);
+}
+
+/** When a piece of work last changed: its close time once done, otherwise its update time. */
+export function lastActivity(item: WorkItem): string | null {
+  return item.state === "done" && item.closedAt !== null ? item.closedAt : item.updatedAt;
+}
+

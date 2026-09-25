@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProject, compareIds, workIn, workStateOf, workTracks } from "../client/project";
+import { buildProject, compareIds, recentlyUpdated, workIn, workStateOf, workTracks } from "../client/project";
 import type { Recommendation, Track } from "../shared/beads";
 import { issue, plannedProject, project } from "./work-fixtures";
 
@@ -339,5 +339,18 @@ describe("plan tracks", () => {
 
   it("drops a track that holds only containers", () => {
     expect(workTracks([{ id: "t", reason: null, items: [item("p")], totalItems: 1 }], project(plannedProject))).toEqual([]);
+  });
+});
+
+describe("recent activity", () => {
+  it("lists the newest changes first, a closed item by when it closed, and skips work with no time", () => {
+    const model = project([
+      issue({ id: "old", updatedAt: "2026-09-20T00:00:00.000Z" }),
+      issue({ id: "new", updatedAt: "2026-09-24T10:00:00.000Z" }),
+      issue({ id: "shut", status: "closed", updatedAt: "2026-09-01T00:00:00.000Z", closedAt: "2026-09-24T12:00:00.000Z" }),
+      issue({ id: "unknown" }),
+    ]);
+    expect(recentlyUpdated(model).map((item) => item.id)).toEqual(["shut", "new", "old"]);
+    expect(recentlyUpdated(model, 1).map((item) => item.id)).toEqual(["shut"]);
   });
 });

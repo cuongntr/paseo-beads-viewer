@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { Alert, Blocker, IssueDetail, Recommendation, SearchResult, Track } from "../shared/beads";
 import {
+  activityLabel,
   alertHeadline,
   percentDone,
   priorityLabel,
@@ -185,13 +186,16 @@ export interface FacetContext {
   readonly showPriority: boolean;
   readonly showType: boolean;
   readonly commonLabels: ReadonlySet<string>;
+  /** The clock "updated 9m ago" is measured against. */
+  readonly now: number;
 }
 
-export function facetContext(project: ProjectModel): FacetContext {
+export function facetContext(project: ProjectModel, now: number): FacetContext {
   return {
     showPriority: project.priorityVaries,
     showType: project.typeVaries,
     commonLabels: project.commonLabels,
+    now,
   };
 }
 
@@ -223,6 +227,7 @@ export function WorkFacets({
         value={PLAIN_STATUSES.includes(rawStatus) ? null : statusLabel(item.status)}
       />
       <Facet styles={styles} theme={theme} value={item.assignee === null ? null : `@${item.assignee}`} />
+      <Facet styles={styles} theme={theme} value={activityLabel(item, context.now)} />
       {item.critical ? <Text style={styles.facetAccentText}>critical chain</Text> : null}
       <Facet styles={styles} theme={theme} value={context.showType ? item.type : null} />
       {labels.slice(0, ROW_LABEL_LIMIT).map((label) => (

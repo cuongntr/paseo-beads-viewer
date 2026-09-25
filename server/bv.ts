@@ -150,7 +150,15 @@ export function trackerShowInvocation(route: TrackerRoute, issueId: string) {
  * input, and the selected columns hold no free text, so no quoted field or
  * embedded newline can appear.
  */
-export function trackerFacetsInvocation(route: TrackerRoute) {
+/**
+ * Columns asked of the tracker. The timestamps come first in preference; a
+ * tracker that rejects them still answers the base columns, so types and
+ * assignees never depend on the timestamps being supported.
+ */
+export const FACET_FIELDS_WITH_TIMES = "id,issue_type,assignee,updated_at,closed_at";
+export const FACET_FIELDS_BASE = "id,issue_type,assignee";
+
+export function trackerFacetsInvocation(route: TrackerRoute, fields: string = FACET_FIELDS_WITH_TIMES) {
   const safetyArgs = route.kind === "br" ? ["--no-auto-import", "--no-auto-flush"] : [];
   return {
     args: [
@@ -161,7 +169,7 @@ export function trackerFacetsInvocation(route: TrackerRoute) {
       "--status",
       "all",
       "--fields",
-      "id,issue_type,assignee",
+      fields,
       "--format",
       "csv",
     ],
@@ -174,16 +182,25 @@ export function trackerFacetsInvocation(route: TrackerRoute) {
   } as const;
 }
 
-/** Runs the facet read. A tracker that rejects these flags degrades to no overlay. */
+/**
+ * Runs the facet read, with timestamps when the tracker supports them and
+ * without when it rejects the columns. A tracker that rejects both degrades to
+ * no overlay.
+ */
 export async function runTrackerFacets(route: TrackerRoute, cwd: string): Promise<CommandResult<string>> {
-  const invocation = trackerFacetsInvocation(route);
-  return await runTextCommand({
-    label: `${route.kind} list --format csv`,
-    executableName: route.kind,
-    args: invocation.args,
-    cwd,
-    env: invocation.env,
-  });
+  const read = async (fields: string) => {
+    const invocation = trackerFacetsInvocation(route, fields);
+    return await runTextCommand({
+      label: `${route.kind} list --format csv`,
+      executableName: route.kind,
+      args: invocation.args,
+      cwd,
+      env: invocation.env,
+    });
+  };
+  const withTimes = await read(FACET_FIELDS_WITH_TIMES);
+  if (withTimes.ok || withTimes.error.code !== "exit") return withTimes;
+  return await read(FACET_FIELDS_BASE);
 }
 
 /**
