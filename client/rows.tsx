@@ -2,7 +2,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/react-native";
 import { type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { Alert, Blocker, IssueDetail, Recommendation, SearchResult, Track } from "../shared/beads";
+import { isClosedStatus, type Alert, type Blocker, type IssueDetail, type Recommendation, type SearchResult, type Track } from "../shared/beads";
 import {
   activityLabel,
   alertHeadline,
@@ -20,6 +20,7 @@ import {
   type Tone,
 } from "./format";
 import { MarkdownView } from "./markdown-view";
+import { groupRelations } from "./relations";
 import type { ProjectModel, WorkItem, WorkState } from "./project";
 import type { PanelStyles } from "./styles";
 
@@ -213,7 +214,14 @@ export function WorkFacets({
   item,
   showState,
   context,
-}: Common & { item: WorkItem; showState: boolean; context: FacetContext }) {
+  onOpen,
+}: Common & {
+  item: WorkItem;
+  showState: boolean;
+  context: FacetContext;
+  /** Opens a related issue; when set, the issues this one waits on are links. */
+  onOpen?: (issueId: string) => void;
+}) {
   const rawStatus = item.status.trim().toLowerCase();
   const labels = [...new Set(item.labels)].filter((label) => !context.commonLabels.has(label));
   return (
@@ -238,25 +246,77 @@ export function WorkFacets({
       {labels.length > ROW_LABEL_LIMIT ? (
         <Text style={styles.facetText}>+{labels.length - ROW_LABEL_LIMIT}</Text>
       ) : null}
-      <Facet
-        styles={styles}
-        theme={theme}
-        value={
-          item.state === "done"
-            ? null
-            : item.blockedBy.length > 0
+      {item.state === "done" ? null : onOpen === undefined ? (
+        <Facet
+          styles={styles}
+          theme={theme}
+          value={
+            item.blockedBy.length > 0
               ? waitsOnLabel(item.blockedBy)
               : item.heldVia === null
                 ? null
                 : `${waitsOnLabel(item.inheritedBlockedBy)} via ${item.heldVia}`
-        }
-      />
+          }
+        />
+      ) : (
+        <WaitsOn styles={styles} theme={theme} item={item} onOpen={onOpen} />
+      )}
       <Facet
         styles={styles}
         theme={theme}
         value={item.unblocksCount === 0 || item.state === "done" ? null : `unblocks ${item.unblocksCount}`}
       />
     </>
+  );
+}
+
+/** Blocker ids shown as links before the rest is summarised as `+N`. */
+const WAITS_ON_LINK_LIMIT = 2;
+
+/** "waits on a, b +3" with each id a link to that issue. */
+function WaitsOn({
+  styles,
+  theme,
+  item,
+  onOpen,
+}: Common & { item: WorkItem; onOpen: (issueId: string) => void }) {
+  const own = item.blockedBy.length > 0;
+  const ids = own ? item.blockedBy : item.inheritedBlockedBy;
+  if (ids.length === 0) return null;
+  const rest = ids.length - WAITS_ON_LINK_LIMIT;
+  return (
+    <View style={styles.facet}>
+      <Text style={styles.facetText}>waits on</Text>
+      {ids.slice(0, WAITS_ON_LINK_LIMIT).map((id) => (
+        <IssueLink key={id} styles={styles} theme={theme} id={id} onOpen={onOpen} />
+      ))}
+      {rest > 0 ? <Text style={styles.facetText}>+{rest}</Text> : null}
+      {own || item.heldVia === null ? null : (
+        <>
+          <Text style={styles.facetText}>via</Text>
+          <IssueLink styles={styles} theme={theme} id={item.heldVia} onOpen={onOpen} />
+        </>
+      )}
+    </View>
+  );
+}
+
+/** An issue id that opens the issue. */
+export function IssueLink({
+  styles,
+  id,
+  onOpen,
+}: Common & { id: string; onOpen: (issueId: string) => void }) {
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={`Open ${id}`}
+      onPress={() => onOpen(id)}
+      hitSlop={6}
+      style={({ pressed }) => (pressed ? styles.actionPressed : null)}
+    >
+      <Text style={styles.issueLink}>{id}</Text>
+    </Pressable>
   );
 }
 
@@ -300,7 +360,14 @@ export function WorkRow({
       tone={stateTone(item.state)}
       title={item.title}
       facets={
-        <WorkFacets styles={styles} theme={theme} item={item} showState={showState} context={context} />
+        <WorkFacets
+          styles={styles}
+          theme={theme}
+          item={item}
+          showState={showState}
+          context={context}
+          onOpen={onSelect}
+        />
       }
       note={note ?? null}
       selected={selected}
@@ -468,9 +535,16 @@ export function BlockerRow({
             theme={theme}
             value={blocker.actionable ? "actionable" : "not actionable"}
           />
+          {blocker.unblocks.length === 0 ? null : (
+            <View style={styles.facet}>
+              <Text style={styles.facetText}>→</Text>
+              {blocker.unblocks.map((id) => (
+                <IssueLink key={id} styles={styles} theme={theme} id={id} onOpen={onSelect} />
+              ))}
+            </View>
+          )}
         </>
       }
-      note={blocker.unblocks.length === 0 ? null : blocker.unblocks.join(", ")}
       selected={selectedId === blocker.id}
       accessibilityLabel={accessibilityFacts([
         `blocker ${blocker.id}, ${blocker.title}`,
@@ -576,15 +650,13 @@ function DetailSection({ styles, theme, label, value }: Common & { label: string
   );
 }
 
-export function IssueDetailView({ styles, theme, issue }: Common & { issue: IssueDetail }) {
-  const relations = [
-    issue.parent === null ? null : `parent ${issue.parent}`,
-    issue.labels.length === 0 ? null : `labels ${issue.labels.join(", ")}`,
-    issue.dependencies.length === 0
-      ? null
-      : `depends on ${issue.dependencies.map(refLabel).join(", ")}`,
-    issue.dependents.length === 0 ? null : `blocks ${issue.dependents.map(refLabel).join(", ")}`,
-  ].filter((part): part is string => part !== null);
+export function IssueDetailView({
+  styles,
+  theme,
+  issue,
+  onOpen,
+}: Common & { issue: IssueDetail; onOpen: (issueId: string) => void }) {
+  const relations = groupRelations(issue);
 
   const timestamps = [
     issue.createdAt === null ? null : `created ${issue.createdAt}`,
@@ -623,16 +695,30 @@ export function IssueDetailView({ styles, theme, issue }: Common & { issue: Issu
             value={issue.assignee === null ? null : `@${issue.assignee}`}
           />
         </View>
-        {relations.length === 0 ? null : (
+        {issue.labels.length === 0 ? null : (
           <View style={styles.metaRow}>
-            {relations.map((relation) => (
-              <Text key={relation} style={styles.tagText}>
-                {relation}
+            {issue.labels.map((label) => (
+              <Text key={label} style={styles.labelFacet}>
+                {label}
               </Text>
             ))}
           </View>
         )}
       </View>
+      {relations.length === 0 ? null : (
+        <View style={styles.detailSection}>
+          {relations.map((group) => (
+            <View key={group.key} style={styles.relationGroup}>
+              <Text style={styles.detailSectionLabel}>
+                {group.title.toUpperCase()} · {group.refs.length}
+              </Text>
+              {group.refs.map((ref) => (
+                <RelationRow key={ref.id} styles={styles} theme={theme} relation={ref} onOpen={onOpen} />
+              ))}
+            </View>
+          ))}
+        </View>
+      )}
       <DetailSection styles={styles} theme={theme} label="Description" value={issue.description} />
       <DetailSection styles={styles} theme={theme} label="Design" value={issue.design} />
       <DetailSection
@@ -661,8 +747,36 @@ export function IssueDetailView({ styles, theme, issue }: Common & { issue: Issu
   );
 }
 
-function refLabel(ref: IssueDetail["dependencies"][number]): string {
-  return `${ref.id}${ref.status === null ? "" : ` (${ref.status})`}`;
+/** One related issue: status, id and title, opening that issue on press. Finished ones recede. */
+function RelationRow({
+  styles,
+  theme,
+  relation,
+  onOpen,
+}: Common & { relation: IssueDetail["dependencies"][number]; onOpen: (issueId: string) => void }) {
+  const closed = relation.status !== null && isClosedStatus(relation.status);
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={accessibilityFacts([
+        `Open ${relation.id}`,
+        relation.title,
+        relation.status === null ? null : statusLabel(relation.status),
+      ])}
+      onPress={() => onOpen(relation.id)}
+      style={({ pressed }) => [styles.relationRow, pressed ? styles.railRowSelected : null]}
+    >
+      <Icon
+        name={relation.status === null ? "CircleDashed" : statusIconName(relation.status)}
+        size={13}
+        color={theme.colors.foregroundMuted}
+      />
+      <IdentFacet styles={styles} theme={theme} id={relation.id} />
+      <Text style={closed ? styles.relationTitleDone : styles.relationTitle} numberOfLines={1}>
+        {relation.title ?? relation.id}
+      </Text>
+    </Pressable>
+  );
 }
 
 /** Joins accessibility facts into one comma-separated label, dropping absent ones. */

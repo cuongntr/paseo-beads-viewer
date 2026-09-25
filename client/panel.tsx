@@ -301,7 +301,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
           </View>
         </View>
         <ScrollView key={selectedId} style={styles.paneScroll} contentContainerStyle={styles.detailContent}>
-          <IssueInspectorBody styles={styles} theme={theme} issue={issue} />
+          <IssueInspectorBody styles={styles} theme={theme} issue={issue} onOpen={setSelectedId} />
         </ScrollView>
       </View>
     );
@@ -330,7 +330,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
           {selectedId === null ? null : (
             <View style={styles.stateBlock}>
               <SectionHeader styles={styles} theme={theme} title="Issue detail" meta={selectedId} />
-              <IssueInspectorBody styles={styles} theme={theme} issue={issue} />
+              <IssueInspectorBody styles={styles} theme={theme} issue={issue} onOpen={setSelectedId} />
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Clear the selected issue"
@@ -485,7 +485,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
                     <Text style={styles.actionText}>Clear</Text>
                   </Pressable>
                 </View>
-                <IssueInspectorBody styles={styles} theme={theme} issue={issue} />
+                <IssueInspectorBody styles={styles} theme={theme} issue={issue} onOpen={setSelectedId} />
               </>
             </ScrollView>
           </View>
@@ -972,14 +972,17 @@ function IssueInspectorBody({
   styles,
   theme,
   issue,
+  onOpen,
 }: {
   styles: PanelStyles;
   theme: PluginWorkspacePanelProps["theme"];
   issue: IssueQueryState;
+  /** Opens a related issue in the same inspector. */
+  onOpen: (issueId: string) => void;
 }) {
   if (issue.isPending) return <Empty styles={styles} theme={theme} message="Reading issue…" />;
   if (issue.data === undefined) return <Text style={styles.danger}>The issue request failed.</Text>;
   if (issue.data.issue === null) return <Text style={styles.danger}>{errorLabel(issue.data.error)}</Text>;
-  return <IssueDetailView styles={styles} theme={theme} issue={issue.data.issue} />;
+  return <IssueDetailView styles={styles} theme={theme} issue={issue.data.issue} onOpen={onOpen} />;
 }
 

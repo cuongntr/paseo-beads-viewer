@@ -306,7 +306,14 @@ function Card({
           {item.title}
         </Text>
         <View style={styles.facetRow}>
-          <WorkFacets styles={styles} theme={theme} item={item} showState={showState} context={context} />
+          <WorkFacets
+            styles={styles}
+            theme={theme}
+            item={item}
+            showState={showState}
+            context={context}
+            onOpen={onSelect}
+          />
         </View>
       </View>
     </Pressable>

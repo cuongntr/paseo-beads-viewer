@@ -158,6 +158,11 @@ export interface PanelStyles {
   readonly groupTitleStrong: TextStyle;
   readonly labelFacet: TextStyle;
   readonly labelRow: ViewStyle;
+  readonly issueLink: TextStyle;
+  readonly relationGroup: ViewStyle;
+  readonly relationRow: ViewStyle;
+  readonly relationTitle: TextStyle;
+  readonly relationTitleDone: TextStyle;
   readonly facetAccentText: TextStyle;
   readonly boardCard: ViewStyle;
   readonly boardCardSelected: ViewStyle;
@@ -556,6 +561,19 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     groupRowHead: { flexDirection: "row", alignItems: "baseline", gap: 10 },
     groupTitle: { flex: 1, color: theme.colors.foreground, fontSize: 12 },
     groupTitleStrong: { flex: 1, color: theme.colors.foreground, fontSize: 13, fontWeight: "700" },
+    /** An issue id that opens the issue. */
+    issueLink: { color: theme.colors.accent, fontSize: 10, fontWeight: "600", textDecorationLine: "underline" },
+    relationGroup: { gap: 2, paddingBottom: 6 },
+    relationRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      minHeight: compact ? 38 : 28,
+      paddingHorizontal: 4,
+      borderRadius: 3,
+    },
+    relationTitle: { flexShrink: 1, color: theme.colors.foreground, fontSize: 12 },
+    relationTitleDone: { flexShrink: 1, color: theme.colors.foregroundMuted, fontSize: 12 },
     labelRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 3 },
     /** A project label, written as the project wrote it. */
     labelFacet: {
