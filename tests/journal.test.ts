@@ -8,6 +8,7 @@ import {
   MAX_RECORD_LINE,
   journalConfigInvocation,
   journalTailInvocation,
+  parseJournalEnabled,
   parseRecordLine,
   tailJournal,
 } from "../server/journal";
@@ -41,6 +42,12 @@ if (mode === "records") {
 } else if (mode === "truncated") {
   process.stdout.write(JSON.stringify({ code: "events_journal_truncated", error: "events journal truncated", floor: 3, head: 4, schema_version: 1, since }, null, 2) + "\\n");
   process.exit(1);
+} else if (mode === "wrapper") {
+  // Like the npm bd wrapper: a child of its own does the work, and outlives a kill of the wrapper alone.
+  const { spawn } = require("node:child_process");
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  require("node:fs").writeFileSync(process.env.FAKE_BD_PIDFILE, String(child.pid));
+  setInterval(() => {}, 1000);
 } else if (mode === "unknown") {
   process.stderr.write('Error: unknown command "events" for "bd"\\n');
   process.exit(1);
@@ -54,10 +61,10 @@ afterEach(() => {
   clearExecutableCache();
 });
 
-async function tail(mode: string, since: number, maxOutputBytes = 64 * 1024 * 1024) {
+async function tail(mode: string, since: number, maxOutputBytes = 64 * 1024 * 1024, timeoutMs = 20_000) {
   process.env.FAKE_BD_MODE = mode;
   primeExecutableCache("bd", FAKE_BD);
-  return await tailJournal(ROUTE, DIRECTORY, since, null, { timeoutMs: 20_000, maxOutputBytes });
+  return await tailJournal(ROUTE, DIRECTORY, since, null, { timeoutMs, maxOutputBytes });
 }
 
 describe("journal argv", () => {
@@ -131,6 +138,33 @@ describe("journal tail", () => {
     primeExecutableCache("bd", null);
     const outcome = await tailJournal(ROUTE, DIRECTORY, 0, null);
     expect(outcome.kind === "failed" ? outcome.error.code : outcome.kind).toBe("unavailable");
+  });
+});
+
+describe("process cleanup", () => {
+  it("kills the whole process group on timeout, so the real bd under a wrapper does not survive", async () => {
+    const pidFile = join(DIRECTORY, "grandchild.pid");
+    process.env.FAKE_BD_PIDFILE = pidFile;
+    const outcome = await tail("wrapper", 0, 1024, 1_000);
+    expect(outcome.kind === "failed" ? outcome.error.code : outcome.kind).toBe("timeout");
+    const { readFile } = await import("node:fs/promises");
+    const pid = Number(await readFile(pidFile, "utf8"));
+    expect(pid).toBeGreaterThan(0);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(() => process.kill(pid, 0)).toThrow();
+    delete process.env.FAKE_BD_PIDFILE;
+  });
+});
+
+describe("journal config", () => {
+  it("accepts every truthy form bd reports, including BD_EVENTS_JOURNAL=1", () => {
+    for (const value of ["true", "1", "TRUE", "yes", "on", "t", true, 1]) {
+      expect(parseJournalEnabled({ key: "events-journal", value })).toBe(true);
+    }
+    for (const value of ["false", "0", "", "no", "off", false, 0]) {
+      expect(parseJournalEnabled({ key: "events-journal", value })).toBe(false);
+    }
+    expect(() => parseJournalEnabled({ key: "events-journal" })).toThrow();
   });
 });
 

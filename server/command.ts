@@ -43,7 +43,8 @@ export function summarizeStderr(stderr: string, maxLength = 400): string {
 }
 
 const executableCache = new Map<string, string | null>();
-const activeProcesses = new Set<ChildProcess>();
+/** Each live child with the kill that reaches everything it started. */
+const activeProcesses = new Map<ChildProcess, () => void>();
 
 async function isExecutableFile(candidate: string): Promise<boolean> {
   try {
@@ -91,8 +92,8 @@ export function clearExecutableCache(): void {
 
 /** Terminates every process this module still owns. Used by plugin cleanup. */
 export function killActiveProcesses(): void {
-  for (const child of activeProcesses) {
-    child.kill("SIGKILL");
+  for (const kill of activeProcesses.values()) {
+    kill();
   }
   activeProcesses.clear();
 }
@@ -119,6 +120,12 @@ export interface SpawnRequest {
   readonly cwd: string;
   readonly limits?: CommandLimits;
   readonly env?: BeadsEnvironment;
+  /**
+   * Starts the child in its own process group and kills the whole group. The
+   * npm `bd` is a node wrapper around the real binary, so killing only the
+   * wrapper on a timeout would leave bd running.
+   */
+  readonly processGroup?: boolean;
   /**
    * Streams stdout line by line instead of collecting it, so a long output costs
    * one line of memory. `maxOutputBytes` then bounds the bytes read in total.
@@ -177,14 +184,27 @@ function lineSplitter(stream: LineStream): { push: (chunk: string) => void; end:
 export async function runProcess(request: SpawnRequest): Promise<ProcessOutcome> {
   const limits = request.limits ?? DEFAULT_LIMITS;
   return await new Promise<ProcessOutcome>((resolve, reject) => {
+    const ownGroup = request.processGroup === true && process.platform !== "win32";
     const child = spawn(request.executable, [...request.args], {
+      detached: ownGroup,
       cwd: request.cwd,
       shell: false,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: childEnvironment(request.env),
     });
-    activeProcesses.add(child);
+    const killChild = (): void => {
+      if (ownGroup && child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+          return;
+        } catch {
+          // The group is already gone; fall through to the child itself.
+        }
+      }
+      child.kill("SIGKILL");
+    };
+    activeProcesses.set(child, killChild);
 
     let stdout = "";
     let stderr = "";
@@ -207,7 +227,7 @@ export async function runProcess(request: SpawnRequest): Promise<ProcessOutcome>
     // A grandchild can inherit the pipes and prevent `close` after this child is
     // killed. Bound that case too, otherwise one timeout can pin the per-workspace queue.
     const killAndBoundClose = (): void => {
-      child.kill("SIGKILL");
+      killChild();
       if (killGraceTimer !== null) return;
       killGraceTimer = setTimeout(() => {
         child.stdout?.destroy();
@@ -333,6 +353,7 @@ export interface JsonCommandRequest {
   readonly cwd: string;
   readonly limits?: CommandLimits;
   readonly env?: BeadsEnvironment;
+  readonly processGroup?: boolean;
 }
 
 /** Resolves the executable, runs it, and interprets its stdout as JSON. */
@@ -353,6 +374,7 @@ export async function runJsonCommand<Value>(
       cwd: request.cwd,
       limits: request.limits,
       env: request.env,
+      processGroup: request.processGroup,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "spawn failed";
@@ -376,6 +398,7 @@ export async function runTextCommand(request: JsonCommandRequest): Promise<Comma
       cwd: request.cwd,
       limits: request.limits,
       env: request.env,
+      processGroup: request.processGroup,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "spawn failed";

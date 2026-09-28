@@ -62,8 +62,11 @@ export const dashboardRpc = defineRpc({
       alerts: SectionStateSchema,
       graph: SectionStateSchema,
     }),
-    /** The journal position this snapshot was read at, for live workspaces. */
-    changes: ChangeStateSchema,
+    /**
+     * The journal position read before this snapshot, for live workspaces. A
+     * server without live refresh omits it, which reads as not live.
+     */
+    changes: ChangeStateSchema.default({ live: false, reason: "unavailable", token: null }),
     fetchedAt: z.string(),
     cached: z.boolean(),
   }),

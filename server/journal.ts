@@ -36,8 +36,14 @@ export type TailOutcome =
   | { readonly kind: "truncated"; readonly head: number }
   | { readonly kind: "failed"; readonly error: CommandError };
 
-/** A poll reads what changed in about five seconds; more than this is a bulk change. */
-export const POLL_TAIL_LIMITS: CommandLimits = { timeoutMs: 5_000, maxOutputBytes: 16 * 1024 * 1024 };
+/**
+ * A poll reads what changed in about five seconds; more than this is a bulk
+ * change. An idle read takes about 0.1-0.25 s, but a reader waits behind a
+ * bulk writer's lock (measured 19 s behind three 40-issue updates) without
+ * slowing it, so the wait is allowed to run well past the poll interval; the
+ * caller keeps one read per database and retries a timeout with backoff.
+ */
+export const POLL_TAIL_LIMITS: CommandLimits = { timeoutMs: 20_000, maxOutputBytes: 16 * 1024 * 1024 };
 
 /**
  * A baseline reads the whole journal to find its head, since bd has no head
@@ -80,10 +86,14 @@ export function journalTailInvocation(route: TrackerRoute, since: number, limit:
   } as const;
 }
 
-function parseEnabled(payload: unknown): boolean {
+/** bd reports `BD_EVENTS_JOURNAL=1` as the value "1"; accept every truthy spelling. */
+const TRUTHY = new Set(["1", "t", "true", "y", "yes", "on"]);
+
+export function parseJournalEnabled(payload: unknown): boolean {
   const value = asRecord(payload)?.["value"];
   if (value === undefined) throw new Error("no value");
-  return value === true || (typeof value === "string" && value.trim().toLowerCase() === "true");
+  if (value === true || value === 1) return true;
+  return typeof value === "string" && TRUTHY.has(value.trim().toLowerCase());
 }
 
 /** True only when the workspace's own configuration turns the journal on. */
@@ -97,8 +107,9 @@ export async function readJournalEnabled(route: TrackerRoute, cwd: string): Prom
       cwd,
       env: invocation.env,
       limits: CONFIG_LIMITS,
+      processGroup: true,
     },
-    parseEnabled,
+    parseJournalEnabled,
   );
 }
 
@@ -195,6 +206,7 @@ export async function tailJournal(
       cwd,
       env: invocation.env,
       limits,
+      processGroup: true,
       lines: { maxLineLength: MAX_RECORD_LINE, onLine: collector.onLine },
     });
   } catch (error) {

@@ -323,17 +323,28 @@ describe("dashboard assembly", () => {
 describe("live change state on the dashboard", () => {
   const HEAD = { seq: 9, ts: "2026-09-28T05:05:27Z", op: "update", issueId: "pib-x1q9" };
 
-  it("carries a live token for a bd workspace with the journal on, and a poll agrees", async () => {
+  it("tags a first load pending, and the reload it forces carries the position read before bv", async () => {
     respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
     readJournalEnabled.mockResolvedValue(ok(true));
     tailJournal.mockResolvedValue({ kind: "records", first: HEAD, last: HEAD });
-    const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
+    const first = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
+    expect(first.changes?.live).toBe(true);
+    expect(first.changes?.reason).toBe("live");
 
-    expect(result.changes.live).toBe(true);
-    expect(result.changes.reason).toBe("live");
-    expect(await getChanges({ workspaceId: "ws-1" }, context(WORKSPACE_DIR))).toEqual(result.changes);
-    // The poll never runs bv.
-    expect(runBvJson).toHaveBeenCalledTimes(4);
+    // The route was only known after bv, so no poll will ever agree with the first snapshot.
+    const polled = await getChanges({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
+    expect(polled.live).toBe(true);
+    expect(polled.token).not.toBe(first.changes?.token);
+
+    const reload = await getDashboard({ workspaceId: "ws-1", refresh: true }, context(WORKSPACE_DIR));
+    expect(reload.changes).toEqual(polled);
+    // The journal was read before bv on the reload.
+    const journalOrder = tailJournal.mock.invocationCallOrder.at(-1) ?? 0;
+    const bvOrder = runBvJson.mock.invocationCallOrder.slice(-4)[0] ?? 0;
+    expect(journalOrder).toBeLessThan(bvOrder);
+    expect(await getChanges({ workspaceId: "ws-1" }, context(WORKSPACE_DIR))).toEqual(reload.changes);
+    // Polls never run bv.
+    expect(runBvJson).toHaveBeenCalledTimes(8);
   });
 
   it("reports journal-off for a bd workspace with the journal off", async () => {
@@ -355,7 +366,7 @@ describe("live change state on the dashboard", () => {
   it("is not live for a workspace with no Beads project", async () => {
     respond({ triage: err("exit", "no beads directory found; run br init", 1), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
     const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
-    expect(result.changes.live).toBe(false);
+    expect(result.changes?.live).toBe(false);
     expect(readJournalEnabled).not.toHaveBeenCalled();
   });
 });
