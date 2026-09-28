@@ -519,6 +519,42 @@ function buildRoots(work: readonly WorkItem[], byId: ReadonlyMap<string, WorkIte
     .sort(comparePackages);
 }
 
+/**
+ * How an outermost container reads in the overview. A reader opens it to find
+ * the work left, so packages that still have some come first in plan order;
+ * the container's own tasks, which belong to no package, follow them; and
+ * finished packages are set aside rather than filling the list with full bars.
+ */
+export interface RootLayout {
+  /** The container holds all its work itself: nothing to break down. */
+  readonly flat: boolean;
+  /** Packages with work left, in plan order. */
+  readonly open: readonly WorkPackage[];
+  /** The container's own tasks beside its packages, while any is left. */
+  readonly own: WorkPackage | null;
+  /** Packages, and the container's own tasks, with every item done. */
+  readonly finished: readonly WorkPackage[];
+}
+
+export function layoutRoot(root: WorkRoot): RootLayout {
+  const only = root.packages.length === 1 ? root.packages[0] : undefined;
+  if (only !== undefined && only.id === root.id) {
+    return { flat: true, open: [], own: null, finished: [] };
+  }
+  const isOwn = (pkg: WorkPackage) => pkg.id !== null && pkg.id === root.id;
+  const ownPackage = root.packages.find(isOwn);
+  const subPackages = root.packages.filter((pkg) => !isOwn(pkg));
+  return {
+    flat: false,
+    open: subPackages.filter((pkg) => !pkg.settled),
+    own: ownPackage !== undefined && !ownPackage.settled ? ownPackage : null,
+    finished: [
+      ...subPackages.filter((pkg) => pkg.settled),
+      ...(ownPackage !== undefined && ownPackage.settled ? [ownPackage] : []),
+    ],
+  };
+}
+
 function finishPackage(key: string, container: WorkItem | null, items: readonly WorkItem[]): WorkPackage {
   const counts = countStates(items);
   return {

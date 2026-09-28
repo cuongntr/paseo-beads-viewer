@@ -1,9 +1,10 @@
 import type { PluginTheme } from "@getpaseo/plugin";
+import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ProjectHealth, Recommendation } from "../shared/beads";
 import { percentDone, stateDescription, toneColor } from "./format";
-import { recentlyUpdated, workIn, type ProjectModel, type WorkPackage, type WorkRoot, type WorkState } from "./project";
-import { Empty, facetContext, ProgressBar, RecommendationRow, SectionHeader, WorkRow } from "./rows";
+import { layoutRoot, recentlyUpdated, workIn, type ProjectModel, type WorkPackage, type WorkRoot, type WorkState } from "./project";
+import { Empty, facetContext, type FacetContext, ProgressBar, RecommendationRow, SectionHeader, WorkRow } from "./rows";
 import type { PanelStyles } from "./styles";
 
 /** Rows per work list before the rest is left to the Board. */
@@ -117,7 +118,7 @@ export function OverviewView({
     <View style={styles.overviewColumns}>
       <View style={styles.overviewColumn}>
         <Summary styles={styles} theme={theme} project={project} health={health} />
-        <Groups styles={styles} theme={theme} project={project} selectedId={selectedId} onSelect={onSelect} />
+        <Groups styles={styles} theme={theme} project={project} context={context} selectedId={selectedId} onSelect={onSelect} />
       </View>
       <View style={styles.overviewColumn}>
         {list("In progress", active, null, false)}
@@ -211,12 +212,14 @@ function Groups({
   styles,
   theme,
   project,
+  context,
   selectedId,
   onSelect,
 }: {
   readonly styles: PanelStyles;
   readonly theme: PluginTheme;
   readonly project: ProjectModel;
+  readonly context: FacetContext;
   readonly selectedId: string | null;
   readonly onSelect: (issueId: string) => void;
 }) {
@@ -232,84 +235,152 @@ function Groups({
         meta={finished === 0 ? `${live.length}` : `${live.length} open · ${finished} finished`}
       />
       {live.map((root) => (
-        <RootBlock key={root.key} styles={styles} theme={theme} root={root} selectedId={selectedId} onSelect={onSelect} />
+        <RootBlock
+          key={root.key}
+          styles={styles}
+          theme={theme}
+          root={root}
+          context={context}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
       ))}
     </View>
   );
 }
 
 /**
- * An outermost container and its packages. When the container holds its work
- * directly there is nothing to break down, so it is a single row.
+ * An outermost container and its packages, arranged by {@link layoutRoot}:
+ * what is left first, finished packages folded into one line the reader can
+ * open. When the container holds its work directly there is nothing to break
+ * down, so it is a single row.
  */
 function RootBlock({
   styles,
   theme,
   root,
+  context,
   selectedId,
   onSelect,
 }: {
   readonly styles: PanelStyles;
   readonly theme: PluginTheme;
   readonly root: WorkRoot;
+  readonly context: FacetContext;
   readonly selectedId: string | null;
   readonly onSelect: (issueId: string) => void;
 }) {
-  const only = root.packages.length === 1 ? root.packages[0] : undefined;
-  const flat = only !== undefined && only.id === root.id;
+  const [showFinished, setShowFinished] = useState(false);
+  const layout = layoutRoot(root);
+  const row = (pkg: WorkPackage) => {
+    const id = pkg.id;
+    return id !== null && id === root.id ? (
+      <OwnTasksRow key={pkg.key} styles={styles} theme={theme} pkg={pkg} context={context} selectedId={selectedId} onSelect={onSelect} />
+    ) : (
+      <View key={pkg.key} style={styles.packageIndent}>
+        <GroupRow
+          styles={styles}
+          theme={theme}
+          id={id}
+          title={pkg.title}
+          done={pkg.done}
+          total={pkg.total}
+          counts={pkg.counts}
+          strong={false}
+          selected={id !== null && selectedId === id}
+          onPress={id === null ? null : () => onSelect(id)}
+        />
+      </View>
+    );
+  };
+  const rootId = root.id;
   return (
     <View style={styles.rootBlock}>
       <GroupRow
         styles={styles}
         theme={theme}
-        id={root.id}
+        id={rootId}
         title={root.title}
         done={root.done}
         total={root.total}
         counts={root.counts}
         strong
-        selected={root.id !== null && selectedId === root.id}
-        onSelect={onSelect}
+        selected={rootId !== null && selectedId === rootId}
+        onPress={rootId === null ? null : () => onSelect(rootId)}
       />
-      {flat
-        ? null
-        : root.packages.map((pkg) => (
-            <PackageRow key={pkg.key} styles={styles} theme={theme} pkg={pkg} root={root} selectedId={selectedId} onSelect={onSelect} />
-          ))}
+      {layout.open.map(row)}
+      {layout.own === null ? null : row(layout.own)}
+      {layout.finished.length === 0 ? null : (
+        <View style={styles.packageIndent}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showFinished }}
+            accessibilityLabel={`${layout.finished.length} finished`}
+            onPress={() => setShowFinished(!showFinished)}
+            style={({ pressed }) => [styles.foldRow, pressed ? styles.railRowSelected : null]}
+          >
+            <Text style={styles.foldLabel}>
+              {showFinished ? "▾" : "▸"} {layout.finished.length} finished
+            </Text>
+          </Pressable>
+        </View>
+      )}
+      {showFinished ? layout.finished.map(row) : null}
     </View>
   );
 }
 
-function PackageRow({
+/**
+ * Tasks filed on the container itself, beside its packages. They are not an
+ * issue of their own, so the row opens in place to list what is left of them
+ * rather than leading to the container again.
+ */
+function OwnTasksRow({
   styles,
   theme,
   pkg,
-  root,
+  context,
   selectedId,
   onSelect,
 }: {
   readonly styles: PanelStyles;
   readonly theme: PluginTheme;
   readonly pkg: WorkPackage;
-  readonly root: WorkRoot;
+  readonly context: FacetContext;
   readonly selectedId: string | null;
   readonly onSelect: (issueId: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const left = pkg.items.filter((item) => item.state !== "done");
   return (
     <View style={styles.packageIndent}>
       <GroupRow
         styles={styles}
         theme={theme}
-        id={pkg.id}
-        // Work filed directly on the top-level issue, beside its sub-groups.
-        title={pkg.id !== null && pkg.id === root.id ? `Directly under ${root.id}` : pkg.title}
+        id={null}
+        title="Other tasks"
         done={pkg.done}
         total={pkg.total}
         counts={pkg.counts}
         strong={false}
-        selected={pkg.id !== null && selectedId === pkg.id}
-        onSelect={onSelect}
+        selected={false}
+        expanded={left.length === 0 ? undefined : expanded}
+        onPress={left.length === 0 ? null : () => setExpanded(!expanded)}
       />
+      {expanded && left.length > 0
+        ? left.map((item) => (
+            <WorkRow
+              key={item.id}
+              styles={styles}
+              theme={theme}
+              item={item}
+              showState
+              context={context}
+              selected={selectedId === item.id}
+              onSelect={onSelect}
+            />
+          ))
+        : null}
     </View>
   );
 }
@@ -324,10 +395,12 @@ function GroupRow({
   counts,
   strong,
   selected,
-  onSelect,
+  expanded,
+  onPress,
 }: {
   readonly styles: PanelStyles;
   readonly theme: PluginTheme;
+  /** Shown under the bar; null when the row is not an issue of its own. */
   readonly id: string | null;
   readonly title: string;
   readonly done: number;
@@ -335,7 +408,9 @@ function GroupRow({
   readonly counts: WorkPackage["counts"];
   readonly strong: boolean;
   readonly selected: boolean;
-  readonly onSelect: (issueId: string) => void;
+  /** Set when pressing the row opens or closes it in place. */
+  readonly expanded?: boolean;
+  readonly onPress: (() => void) | null;
 }) {
   const detail = [
     counts.ready === 0 ? null : `${counts.ready} ready`,
@@ -350,7 +425,7 @@ function GroupRow({
     <>
       <View style={styles.groupRowHead}>
         <Text style={strong ? styles.groupTitleStrong : styles.groupTitle} numberOfLines={1}>
-          {title}
+          {expanded === undefined ? title : `${expanded ? "▾" : "▸"} ${title}`}
         </Text>
         <Text style={styles.progressText}>
           {done}/{total}
@@ -360,13 +435,13 @@ function GroupRow({
       <Text style={styles.groupMeta}>{[id, detail].filter((part) => part !== null && part.length > 0).join("  ·  ")}</Text>
     </>
   );
-  if (id === null) return <View style={styles.groupRow}>{body}</View>;
+  if (onPress === null) return <View style={styles.groupRow}>{body}</View>;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityState={expanded === undefined ? { selected } : { expanded }}
       accessibilityLabel={`${title}, ${done} of ${total} done${detail.length === 0 ? "" : `, ${detail}`}`}
-      onPress={() => onSelect(id)}
+      onPress={onPress}
       style={({ pressed }) => [styles.groupRow, selected || pressed ? styles.railRowSelected : null]}
     >
       {body}

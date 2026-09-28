@@ -188,6 +188,14 @@ A quiet dependency and workstream console shaped as a **workbench**, not a SaaS 
   did, put a real 28-issue project in one group. Groups sort by id with numbers compared
   numerically, so `x.2` precedes `x.10`; parentless work sinks to a catch-all. Walks up the
   parent chain stop on a cycle or an absent parent.
+- **The overview shows what is left of each group.** A reader opens a group to find the work
+  left, so packages that still have some are listed in plan order and finished ones fold into
+  one "N finished" line the reader can open. On a real project most of a feature's packages
+  were done, and seven of eight rows were full bars around the one that was not. Tasks filed on
+  the top-level issue itself, beside its packages, read as `Other tasks` after the packages. They
+  are not an issue of their own, so the row opens in place to list what is left of them. It was
+  first labelled `Directly under <id>`, repeated the parent's id and led back to the parent,
+  which read as a second copy of it; and because its id sorts first, the leftovers headed the group.
 - **The board is a plain board: columns by state, grouping by filter.** One column per derived
   state in the order work moves — Ready, Waiting (both not started), In progress, Held, Other
   status, Done — each one list with its own scroll; `Held` and `Other status` appear only when non-empty

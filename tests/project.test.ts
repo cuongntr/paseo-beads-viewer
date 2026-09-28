@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProject, compareIds, recentlyUpdated, workIn, workStateOf, workTracks } from "../client/project";
+import { buildProject, compareIds, layoutRoot, recentlyUpdated, workIn, workStateOf, workTracks } from "../client/project";
 import type { Recommendation, Track } from "../shared/beads";
 import { issue, plannedProject, project } from "./work-fixtures";
 
@@ -183,6 +183,60 @@ describe("groups", () => {
       ["e", true],
       ["f", false],
     ]);
+  });
+
+  it("lays out work left first, the epic's own tasks after it, and finished packages apart", () => {
+    // Shaped after a real feature epic: most work packages done, follow-up
+    // tasks filed on the epic itself.
+    const model = project([
+      issue({ id: "f", type: "epic" }),
+      issue({ id: "f.1", type: "epic", parentId: "f" }),
+      issue({ id: "f.2", type: "epic", parentId: "f" }),
+      issue({ id: "f.3", type: "epic", parentId: "f" }),
+      issue({ id: "f.1.1", parentId: "f.1", status: "closed" }),
+      issue({ id: "f.2.1", parentId: "f.2" }),
+      issue({ id: "f.3.1", parentId: "f.3", status: "closed" }),
+      issue({ id: "f.4", parentId: "f", status: "closed" }),
+      issue({ id: "f.5", parentId: "f" }),
+    ]);
+    const root = model.roots[0];
+    if (root === undefined) throw new Error("no root");
+    // The epic's own package sorts first by id; the layout moves it after the packages.
+    expect(root.packages[0]?.id).toBe("f");
+    const layout = layoutRoot(root);
+    expect(layout.flat).toBe(false);
+    expect(layout.open.map((pkg) => pkg.id)).toEqual(["f.2"]);
+    expect(layout.own?.items.map((item) => item.id)).toEqual(["f.4", "f.5"]);
+    expect(layout.finished.map((pkg) => pkg.id)).toEqual(["f.1", "f.3"]);
+  });
+
+  it("sets the epic's own tasks aside with the finished packages once they are all done", () => {
+    const model = project([
+      issue({ id: "f", type: "epic" }),
+      issue({ id: "f.1", type: "epic", parentId: "f" }),
+      issue({ id: "f.1.1", parentId: "f.1" }),
+      issue({ id: "f.2", parentId: "f", status: "closed" }),
+    ]);
+    const root = model.roots[0];
+    if (root === undefined) throw new Error("no root");
+    const layout = layoutRoot(root);
+    expect(layout.own).toBeNull();
+    expect(layout.open.map((pkg) => pkg.id)).toEqual(["f.1"]);
+    expect(layout.finished.map((pkg) => pkg.id)).toEqual(["f"]);
+  });
+
+  it("does not break down an epic that holds all of its work itself", () => {
+    const model = project([issue({ id: "e", type: "epic" }), issue({ id: "e.1", parentId: "e" })]);
+    const root = model.roots[0];
+    if (root === undefined) throw new Error("no root");
+    expect(layoutRoot(root)).toEqual({ flat: true, open: [], own: null, finished: [] });
+  });
+
+  it("does not break down the catch-all of parentless work", () => {
+    const model = project([issue({ id: "a" }), issue({ id: "b", status: "closed" })]);
+    const root = model.roots[0];
+    if (root === undefined) throw new Error("no root");
+    expect(layoutRoot(root).flat).toBe(true);
   });
 
   it("terminates on a cyclic parent chain instead of hanging", () => {

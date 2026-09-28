@@ -154,6 +154,8 @@ export interface PanelStyles {
   readonly packageIndent: ViewStyle;
   readonly groupRow: ViewStyle;
   readonly groupRowHead: ViewStyle;
+  readonly foldRow: ViewStyle;
+  readonly foldLabel: TextStyle;
   readonly groupTitle: TextStyle;
   readonly groupTitleStrong: TextStyle;
   readonly labelFacet: TextStyle;
@@ -559,6 +561,8 @@ export function createPanelStyles(theme: PluginTheme, compact: boolean): PanelSt
     packageIndent: { paddingLeft: 14 },
     groupRow: { gap: 4, paddingVertical: 6, paddingHorizontal: 4, borderRadius: 3 },
     groupRowHead: { flexDirection: "row", alignItems: "baseline", gap: 10 },
+    foldRow: { justifyContent: "center", minHeight: compact ? 44 : 30, paddingHorizontal: 4, borderRadius: 3 },
+    foldLabel: { color: theme.colors.foregroundMuted, fontSize: 11 },
     groupTitle: { flex: 1, color: theme.colors.foreground, fontSize: 12 },
     groupTitleStrong: { flex: 1, color: theme.colors.foreground, fontSize: 13, fontWeight: "700" },
     /** An issue id that opens the issue. */
