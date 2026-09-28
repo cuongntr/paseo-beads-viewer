@@ -17,7 +17,6 @@ import {
   normalizeRecommendations,
   normalizeSource,
   normalizeTracks,
-  parseTrackerFacets,
   readPayloadError,
   type TrackerFacets,
 } from "./normalize";
@@ -201,8 +200,8 @@ export async function getDashboard(
   // those two facets and nothing else; it never fails the dashboard.
   let facets: TrackerFacets = EMPTY_FACETS;
   if (trackerResolution.route !== null && graphPayload !== null) {
-    const csv = await runTrackerFacets(trackerResolution.route, directory);
-    if (csv.ok) facets = parseTrackerFacets(csv.value);
+    const read = await runTrackerFacets(trackerResolution.route, directory);
+    if (read.ok) facets = read.value;
   }
 
   const triageSection = classification.triage;

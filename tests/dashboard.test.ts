@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { CommandResult } from "../server/command";
+import { parseTrackerFacets, type TrackerFacets } from "../server/normalize";
 import {
   alertsPayload,
   facetsCsv,
@@ -19,7 +20,7 @@ import {
  */
 const runBvVersion = vi.fn<(cwd: string) => Promise<CommandResult<string>>>();
 const runBvJson = vi.fn();
-const runTrackerFacets = vi.fn<() => Promise<CommandResult<string>>>();
+const runTrackerFacets = vi.fn<() => Promise<CommandResult<TrackerFacets>>>();
 
 vi.mock("../server/bv", () => ({
   runBvVersion: (cwd: string) => runBvVersion(cwd),
@@ -82,7 +83,7 @@ beforeEach(() => {
   runBvJson.mockReset();
   runTrackerFacets.mockReset();
   runBvVersion.mockResolvedValue(ok("bv v0.25.0"));
-  runTrackerFacets.mockResolvedValue(ok(facetsCsv));
+  runTrackerFacets.mockResolvedValue(ok(parseTrackerFacets(facetsCsv)));
 });
 
 describe("dashboard assembly", () => {
@@ -132,7 +133,7 @@ describe("dashboard assembly", () => {
 
   it("keeps the board usable but untyped when the tracker rejects the facet read", async () => {
     respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
-    runTrackerFacets.mockResolvedValue(err("exit", "br list failed: unknown flag --fields", 2));
+    runTrackerFacets.mockResolvedValue(err("exit", "bd list failed: unknown flag: --fields", 1));
     const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
 
     // Losing the overlay costs the epic and type axes, nothing else.

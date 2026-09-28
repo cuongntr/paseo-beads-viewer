@@ -28,6 +28,7 @@ import {
   normalizeSource,
   normalizeTracks,
   parseTrackerFacets,
+  parseTrackerFacetsJson,
   readCsvRecords,
   readPayloadError,
 } from "../server/normalize";
@@ -612,6 +613,77 @@ describe("tracker facet overlay", () => {
   it("reports an empty overlay rather than claiming success on empty output", () => {
     expect(parseTrackerFacets("").ok).toBe(false);
     expect(parseTrackerFacets("id,issue_type,assignee").ok).toBe(false);
+  });
+});
+
+describe("tracker facet overlay from bd JSON", () => {
+  // Shaped after `bd 1.3.0 list --all --flat --limit 0 --brief --skip-labels --json`.
+  const briefList = {
+    issues: [
+      {
+        id: "k-1",
+        issue_type: "Bug",
+        title: "Closed, with \"quotes\"\nand a newline",
+        status: "closed",
+        closed_at: "2026-09-28T05:01:40Z",
+        close_reason: "done",
+        updated_at: "2026-09-28T05:01:40Z",
+      },
+      { id: "k-2", issue_type: "feature", assignee: "Ada Lovelace", title: "Assigned", updated_at: "2026-09-28T05:01:39Z" },
+      { id: "k-3", issue_type: "task", assignee: "", updated_at: "not a date", closed_at: null },
+    ],
+    meta: { count: 3, skip_labels: true },
+    schema_version: 1,
+  };
+
+  it("reads the same facet shape as the CSV route, with a null close time for open issues", () => {
+    const facets = parseTrackerFacetsJson(briefList);
+    expect(facets.ok).toBe(true);
+    expect(facets.byId.get("k-1")).toEqual({
+      type: "bug",
+      assignee: null,
+      updatedAt: "2026-09-28T05:01:40.000Z",
+      closedAt: "2026-09-28T05:01:40.000Z",
+    });
+    expect(facets.byId.get("k-2")).toEqual({
+      type: "feature",
+      assignee: "Ada Lovelace",
+      updatedAt: "2026-09-28T05:01:39.000Z",
+      closedAt: null,
+    });
+    expect(facets.byId.get("k-3")).toEqual({ type: "task", assignee: null, updatedAt: null, closedAt: null });
+  });
+
+  it("carries no free text into the overlay", () => {
+    const facets = parseTrackerFacetsJson(briefList);
+    for (const facet of facets.byId.values()) {
+      expect(Object.keys(facet).sort()).toEqual(["assignee", "closedAt", "type", "updatedAt"]);
+    }
+    expect(JSON.stringify([...facets.byId.values()])).not.toContain("Closed, with");
+  });
+
+  it("accepts a bare array, as older bd releases print it", () => {
+    const facets = parseTrackerFacetsJson(briefList.issues);
+    expect(facets.byId.size).toBe(3);
+  });
+
+  it("skips malformed rows and drops over-long values", () => {
+    const facets = parseTrackerFacetsJson({
+      issues: [null, "k-9", { issue_type: "task" }, { id: 7 }, { id: "k-4", issue_type: "task", assignee: "x".repeat(600) }],
+    });
+    expect(facets.byId.size).toBe(1);
+    expect(facets.byId.get("k-4")?.assignee).toBeNull();
+  });
+
+  it("reports no overlay rather than a partial one past the row bound", () => {
+    const issues = Array.from({ length: 20_001 }, (_, index) => ({ id: `k-${index}`, issue_type: "task" }));
+    expect(parseTrackerFacetsJson({ issues }).ok).toBe(false);
+  });
+
+  it("reports an empty overlay for an empty or unrecognized payload", () => {
+    expect(parseTrackerFacetsJson({ issues: [] }).ok).toBe(false);
+    expect(parseTrackerFacetsJson({ error: "boom" }).ok).toBe(false);
+    expect(parseTrackerFacetsJson(null).ok).toBe(false);
   });
 });
 

@@ -5,7 +5,16 @@ import {
   SEARCH_LIMIT_MIN,
   SEARCH_QUERY_MAX_LENGTH,
 } from "../shared/beads";
-import { failure, runJsonCommand, runTextCommand, type CommandResult, type JsonCommandRequest } from "./command";
+import {
+  DEFAULT_LIMITS,
+  failure,
+  runJsonCommand,
+  runTextCommand,
+  type CommandLimits,
+  type CommandResult,
+  type JsonCommandRequest,
+} from "./command";
+import { parseTrackerFacets, parseTrackerFacetsJson, type TrackerFacets } from "./normalize";
 import type { TrackerRoute } from "./tracker";
 
 export const BV_EXECUTABLE = "bv";
@@ -128,27 +137,31 @@ export async function runBvVersion(cwd: string): Promise<CommandResult<string>> 
   return await serializeWorkspaceCommand(cwd, async () => await runTextCommand(request));
 }
 
+function trackerEnvironment(route: TrackerRoute) {
+  return {
+    BEADS_DIR: route.beadsDirectory,
+    BEADS_DB: route.database,
+    BEADS_JSONL: null,
+    BD_DB: route.database,
+  } as const;
+}
+
 export function trackerShowInvocation(route: TrackerRoute, issueId: string) {
   if (issueId.length > ISSUE_ID_MAX_LENGTH || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(issueId)) return null;
   const safetyArgs = route.kind === "br" ? ["--no-auto-import", "--no-auto-flush"] : [];
   return {
     args: ["--db", route.database, ...safetyArgs, "show", "--json", "--", issueId],
-    env: {
-      BEADS_DIR: route.beadsDirectory,
-      BEADS_DB: route.database,
-      BEADS_JSONL: null,
-      BD_DB: route.database,
-    },
+    env: trackerEnvironment(route),
   } as const;
 }
 
 /**
  * The issue facets `bv --robot-graph` does not carry: type and assignee. CSV
- * with an explicit `--fields` list is the only compact shape the trackers
- * offer; their JSON form embeds every description and measured 2.5 MB for the
- * same 778 issues this returns in 24 KB. The argv is literal and takes no user
- * input, and the selected columns hold no free text, so no quoted field or
- * embedded newline can appear.
+ * with an explicit `--fields` list is the only compact shape `br` offers; its
+ * JSON form embeds every description and measured 2.5 MB for the same 778
+ * issues this returns in 24 KB. The argv is literal and takes no user input,
+ * and the selected columns hold no free text, so no quoted field or embedded
+ * newline can appear.
  */
 /**
  * Columns asked of the tracker. The timestamps come first in preference; a
@@ -173,21 +186,67 @@ export function trackerFacetsInvocation(route: TrackerRoute, fields: string = FA
       "--format",
       "csv",
     ],
-    env: {
-      BEADS_DIR: route.beadsDirectory,
-      BEADS_DB: route.database,
-      BEADS_JSONL: null,
-      BD_DB: route.database,
-    },
+    env: trackerEnvironment(route),
   } as const;
 }
 
 /**
- * Runs the facet read, with timestamps when the tracker supports them and
- * without when it rejects the columns. A tracker that rejects both degrades to
- * no overlay.
+ * `bd` 1.3 dropped `--fields` and `--format csv`. Its compact read is JSON with
+ * `--brief`, which omits descriptions, design, notes and acceptance criteria;
+ * titles remain and are discarded by the parser. `--skip-labels` avoids label
+ * hydration, and the `--include-*` flags keep issues the graph may still show
+ * from being left untyped. `--readonly` makes bd refuse any write.
  */
-export async function runTrackerFacets(route: TrackerRoute, cwd: string): Promise<CommandResult<string>> {
+export function trackerFacetsJsonInvocation(route: TrackerRoute) {
+  return {
+    args: [
+      "--db",
+      route.database,
+      "--readonly",
+      "list",
+      "--all",
+      "--flat",
+      "--limit",
+      "0",
+      "--brief",
+      "--skip-labels",
+      "--include-infra",
+      "--include-gates",
+      "--include-templates",
+      "--json",
+    ],
+    env: trackerEnvironment(route),
+  } as const;
+}
+
+/**
+ * Measured at about 375 bytes per issue on bd 1.3 (4003 issues in 1.5 MB), so
+ * this admits roughly as many issues as the facet parser accepts rows.
+ */
+const FACET_JSON_LIMITS: CommandLimits = { timeoutMs: DEFAULT_LIMITS.timeoutMs, maxOutputBytes: 8 * 1024 * 1024 };
+
+/**
+ * Runs the facet read. `bd` is asked for brief JSON first; a `bd` that rejects
+ * it (an older release) and `br` take the CSV route, with timestamps when the
+ * tracker supports them and without when it rejects the columns. A tracker
+ * that rejects every form degrades to no overlay.
+ */
+export async function runTrackerFacets(route: TrackerRoute, cwd: string): Promise<CommandResult<TrackerFacets>> {
+  if (route.kind === "bd") {
+    const invocation = trackerFacetsJsonInvocation(route);
+    const json = await runJsonCommand(
+      {
+        label: "bd list --brief --json",
+        executableName: route.kind,
+        args: invocation.args,
+        cwd,
+        env: invocation.env,
+        limits: FACET_JSON_LIMITS,
+      },
+      parseTrackerFacetsJson,
+    );
+    if (json.ok || json.error.code !== "exit") return json;
+  }
   const read = async (fields: string) => {
     const invocation = trackerFacetsInvocation(route, fields);
     return await runTextCommand({
@@ -198,9 +257,9 @@ export async function runTrackerFacets(route: TrackerRoute, cwd: string): Promis
       env: invocation.env,
     });
   };
-  const withTimes = await read(FACET_FIELDS_WITH_TIMES);
-  if (withTimes.ok || withTimes.error.code !== "exit") return withTimes;
-  return await read(FACET_FIELDS_BASE);
+  let csv = await read(FACET_FIELDS_WITH_TIMES);
+  if (!csv.ok && csv.error.code === "exit") csv = await read(FACET_FIELDS_BASE);
+  return csv.ok ? { ok: true, value: parseTrackerFacets(csv.value) } : csv;
 }
 
 /**

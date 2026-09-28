@@ -1,0 +1,54 @@
+{
+  "issues": [
+    {
+      "assignee": "Ada Lovelace",
+      "comment_count": 0,
+      "created_at": "2026-09-28T05:01:40Z",
+      "created_by": "cmc-admin",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "id": "fx-d54",
+      "issue_type": "feature",
+      "labels": [],
+      "priority": 2,
+      "status": "open",
+      "title": "Assigned feature, with, commas",
+      "updated_at": "2026-09-28T05:01:40Z"
+    },
+    {
+      "comment_count": 0,
+      "created_at": "2026-09-28T05:01:40Z",
+      "created_by": "cmc-admin",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "id": "fx-w0t",
+      "issue_type": "epic",
+      "labels": [],
+      "priority": 2,
+      "status": "open",
+      "title": "Plain epic",
+      "updated_at": "2026-09-28T05:01:40Z"
+    },
+    {
+      "close_reason": "done",
+      "closed_at": "2026-09-28T05:01:40Z",
+      "comment_count": 0,
+      "created_at": "2026-09-28T05:01:39Z",
+      "created_by": "cmc-admin",
+      "dependency_count": 0,
+      "dependent_count": 0,
+      "id": "fx-6ye",
+      "issue_type": "bug",
+      "labels": [],
+      "priority": 2,
+      "status": "closed",
+      "title": "Closed bug",
+      "updated_at": "2026-09-28T05:01:40Z"
+    }
+  ],
+  "meta": {
+    "count": 3,
+    "skip_labels": true
+  },
+  "schema_version": 1
+}

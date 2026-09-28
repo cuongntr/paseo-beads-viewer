@@ -510,6 +510,41 @@ export function parseTrackerFacets(csv: string): TrackerFacets {
   return { ok: byId.size > 0, byId };
 }
 
+/** A bounded facet cell from the JSON read; free text is never asked for, and an absurd value is dropped. */
+function readFacetString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length === 0 || trimmed.length > FACET_MAX_FIELD_LENGTH ? null : trimmed;
+}
+
+/**
+ * Parses `bd list --brief --json`: either `{ "issues": [...] }` (bd 1.3) or a
+ * bare array. Only id, type, assignee and the two timestamps are copied, so the
+ * titles the brief form still carries never reach the overlay. The same bounds
+ * as the CSV read apply: more rows than the parser accepts is a truncated read,
+ * which reports `ok: false` rather than a partial overlay.
+ */
+export function parseTrackerFacetsJson(payload: unknown): TrackerFacets {
+  const rows = Array.isArray(payload) ? payload : readArray(asRecord(payload), "issues");
+  if (rows.length > FACET_MAX_ROWS) return EMPTY_FACETS;
+
+  const byId = new Map<string, TrackerFacet>();
+  for (const row of rows) {
+    const record = asRecord(row);
+    if (record === null) continue;
+    const id = readFacetString(record, "id");
+    if (id === null) continue;
+    byId.set(id, {
+      type: readFacetString(record, "issue_type")?.toLowerCase() ?? null,
+      assignee: readFacetString(record, "assignee"),
+      updatedAt: readTimestamp(readFacetString(record, "updated_at") ?? undefined),
+      closedAt: readTimestamp(readFacetString(record, "closed_at") ?? undefined),
+    });
+  }
+  return { ok: byId.size > 0, byId };
+}
+
 export function normalizePlanSummary(payload: unknown): PlanSummary | null {
   const plan = asRecord(asRecord(payload)?.["plan"]);
   if (plan === null) return null;
