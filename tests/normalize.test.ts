@@ -712,6 +712,7 @@ describe("dashboard contract", () => {
         alerts: { status: "unavailable" as const, error },
         graph: { status: "unavailable" as const, error },
       },
+      changes: { live: false, reason: "unavailable" as const, token: null },
       fetchedAt: new Date().toISOString(),
       cached: false,
     };
@@ -741,6 +742,7 @@ describe("dashboard contract", () => {
         alerts: { status: "ok" as const, error: null },
         graph: { status: "ok" as const, error: null },
       },
+      changes: { live: false, reason: "unavailable" as const, token: null },
       fetchedAt: new Date().toISOString(),
       cached: false,
     };

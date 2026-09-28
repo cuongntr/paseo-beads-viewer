@@ -4,6 +4,7 @@ import type { CommandError, SectionState } from "../shared/beads";
 import { dashboardRpc } from "../shared/rpc";
 import { runBvJson, runBvVersion, runTrackerFacets } from "./bv";
 import { ExpiringCache } from "./cache";
+import { changesAfterRead, changesBeforeRead, notLive } from "./changes";
 import type { CommandResult } from "./command";
 import {
   EMPTY_FACETS,
@@ -127,6 +128,7 @@ export async function getDashboard(
         alerts: degraded(workspace.error),
         graph: degraded(workspace.error),
       },
+      changes: notLive("unavailable"),
       fetchedAt,
       cached: false,
     };
@@ -141,7 +143,12 @@ export async function getDashboard(
     if (cached !== null) return { ...cached, cached: true };
   }
 
-  const version = await runBvVersion(directory);
+  // The journal position is read before bv, so the snapshot is at least that
+  // new and a change landing during the read shows as a newer token later.
+  const [version, changesBefore] = await Promise.all([
+    runBvVersion(directory),
+    changesBeforeRead(input.workspaceId, directory).catch(() => null),
+  ]);
   if (!version.ok) {
     return {
       workspaceId: input.workspaceId,
@@ -165,6 +172,7 @@ export async function getDashboard(
         alerts: degraded(version.error),
         graph: degraded(version.error),
       },
+      changes: notLive("unavailable"),
       fetchedAt,
       cached: false,
     };
@@ -205,6 +213,12 @@ export async function getDashboard(
   }
 
   const triageSection = classification.triage;
+  const changes = await changesAfterRead(
+    input.workspaceId,
+    directory,
+    projectState === "ready" ? trackerResolution.route : null,
+    changesBefore,
+  ).catch(() => notLive("unavailable"));
 
   const output: DashboardOutput = {
     workspaceId: input.workspaceId,
@@ -228,6 +242,7 @@ export async function getDashboard(
       alerts: sectionOf(alerts),
       graph: graphSection,
     },
+    changes,
     fetchedAt,
     cached: false,
   };

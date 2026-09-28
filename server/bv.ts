@@ -137,7 +137,8 @@ export async function runBvVersion(cwd: string): Promise<CommandResult<string>> 
   return await serializeWorkspaceCommand(cwd, async () => await runTextCommand(request));
 }
 
-function trackerEnvironment(route: TrackerRoute) {
+/** Pins every tracker invocation to the exact database bv read. */
+export function trackerEnvironment(route: TrackerRoute) {
   return {
     BEADS_DIR: route.beadsDirectory,
     BEADS_DB: route.database,

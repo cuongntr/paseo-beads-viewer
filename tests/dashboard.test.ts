@@ -35,7 +35,18 @@ vi.mock("../server/command", async (importOriginal) => {
   return { ...actual, resolveExecutable: async (name: string) => (name === "bd" ? "/usr/bin/bd" : null) };
 });
 
+// The journal reads are bd subprocesses; these tests decide what they return.
+const readJournalEnabled = vi.fn();
+const tailJournal = vi.fn();
+vi.mock("../server/journal", () => ({
+  BASELINE_TAIL_LIMITS: { timeoutMs: 1, maxOutputBytes: 1 },
+  POLL_TAIL_LIMITS: { timeoutMs: 1, maxOutputBytes: 1 },
+  readJournalEnabled: () => readJournalEnabled(),
+  tailJournal: (_route: unknown, _cwd: string, since: number) => tailJournal(since),
+}));
+
 const { getDashboard } = await import("../server/dashboard");
+const { clearChangeState, getChanges } = await import("../server/changes");
 const { clearDashboardCache } = await import("../server/dashboard");
 
 // A real empty directory: the handler verifies its cwd exists before spawning,
@@ -79,6 +90,10 @@ function respond(map: Record<string, CommandResult<unknown>>) {
 
 beforeEach(() => {
   clearDashboardCache();
+  clearChangeState();
+  readJournalEnabled.mockReset();
+  tailJournal.mockReset();
+  readJournalEnabled.mockResolvedValue(ok(false));
   runBvVersion.mockReset();
   runBvJson.mockReset();
   runTrackerFacets.mockReset();
@@ -302,5 +317,45 @@ describe("dashboard assembly", () => {
 
     expect(second.cached).toBe(false);
     expect(runBvJson).toHaveBeenCalledTimes(8);
+  });
+});
+
+describe("live change state on the dashboard", () => {
+  const HEAD = { seq: 9, ts: "2026-09-28T05:05:27Z", op: "update", issueId: "pib-x1q9" };
+
+  it("carries a live token for a bd workspace with the journal on, and a poll agrees", async () => {
+    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
+    readJournalEnabled.mockResolvedValue(ok(true));
+    tailJournal.mockResolvedValue({ kind: "records", first: HEAD, last: HEAD });
+    const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
+
+    expect(result.changes.live).toBe(true);
+    expect(result.changes.reason).toBe("live");
+    expect(await getChanges({ workspaceId: "ws-1" }, context(WORKSPACE_DIR))).toEqual(result.changes);
+    // The poll never runs bv.
+    expect(runBvJson).toHaveBeenCalledTimes(4);
+  });
+
+  it("reports journal-off for a bd workspace with the journal off", async () => {
+    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
+    const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
+    expect(result.changes).toEqual({ live: false, reason: "journal-off", token: null });
+    expect(tailJournal).not.toHaveBeenCalled();
+  });
+
+  it("never fails or blanks the dashboard when change detection fails", async () => {
+    respond({ triage: ok(triagePayload), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
+    readJournalEnabled.mockRejectedValue(new Error("bd exploded"));
+    const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
+    expect(result.projectState).toBe("ready");
+    expect(result.board.total).toBe(5);
+    expect(result.changes).toEqual({ live: false, reason: "unavailable", token: null });
+  });
+
+  it("is not live for a workspace with no Beads project", async () => {
+    respond({ triage: err("exit", "no beads directory found; run br init", 1), plan: ok(planPayload), alerts: ok(alertsPayload), graph: ok(graphPayload) });
+    const result = await getDashboard({ workspaceId: "ws-1" }, context(WORKSPACE_DIR));
+    expect(result.changes.live).toBe(false);
+    expect(readJournalEnabled).not.toHaveBeenCalled();
   });
 });

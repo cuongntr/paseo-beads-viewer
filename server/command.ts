@@ -119,6 +119,55 @@ export interface SpawnRequest {
   readonly cwd: string;
   readonly limits?: CommandLimits;
   readonly env?: BeadsEnvironment;
+  /**
+   * Streams stdout line by line instead of collecting it, so a long output costs
+   * one line of memory. `maxOutputBytes` then bounds the bytes read in total.
+   */
+  readonly lines?: LineStream;
+}
+
+export interface LineStream {
+  /** A longer line is delivered once, cut to this many characters, with `complete` false. */
+  readonly maxLineLength: number;
+  readonly onLine: (line: string, complete: boolean) => void;
+}
+
+/** Splits streamed chunks into lines while holding at most one bounded partial line. */
+function lineSplitter(stream: LineStream): { push: (chunk: string) => void; end: () => void } {
+  let partial = "";
+  let overflowed = false;
+  const emit = (line: string, complete: boolean): void => {
+    const trimmed = line.endsWith("\r") ? line.slice(0, -1) : line;
+    stream.onLine(trimmed, complete);
+  };
+  return {
+    push(chunk: string) {
+      let start = 0;
+      for (let newline = chunk.indexOf("\n"); newline !== -1; newline = chunk.indexOf("\n", start)) {
+        const piece = chunk.slice(start, newline);
+        start = newline + 1;
+        if (overflowed) {
+          overflowed = false;
+          continue;
+        }
+        const line = partial + piece;
+        partial = "";
+        if (line.length > stream.maxLineLength) emit(line.slice(0, stream.maxLineLength), false);
+        else emit(line, true);
+      }
+      if (overflowed) return;
+      partial += chunk.slice(start);
+      if (partial.length > stream.maxLineLength) {
+        emit(partial.slice(0, stream.maxLineLength), false);
+        partial = "";
+        overflowed = true;
+      }
+    },
+    end() {
+      if (!overflowed && partial.length > 0) emit(partial, true);
+      partial = "";
+    },
+  };
 }
 
 /**
@@ -139,6 +188,7 @@ export async function runProcess(request: SpawnRequest): Promise<ProcessOutcome>
 
     let stdout = "";
     let stderr = "";
+    const splitter = request.lines === undefined ? null : lineSplitter(request.lines);
     let stdoutBytes = 0;
     let truncated = false;
     let timedOut = false;
@@ -188,7 +238,8 @@ export async function runProcess(request: SpawnRequest): Promise<ProcessOutcome>
         }
         return;
       }
-      stdout += chunk;
+      if (splitter === null) stdout += chunk;
+      else splitter.push(chunk);
     });
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (chunk: string) => {
@@ -205,6 +256,7 @@ export async function runProcess(request: SpawnRequest): Promise<ProcessOutcome>
     });
 
     child.on("close", (exitCode: number | null, signal: NodeJS.Signals | null) => {
+      if (!truncated && !timedOut) splitter?.end();
       finish({ exitCode, signal, stdout, stderr, timedOut, truncated });
     });
   });

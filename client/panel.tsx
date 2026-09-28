@@ -3,13 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import {
+  CHANGE_POLL_MS,
   SEARCH_LIMIT_DEFAULT,
   SEARCH_QUERY_MAX_LENGTH,
+  type ChangeReason,
   type CommandError,
   type IssueDetail,
   type SearchResult,
 } from "../shared/beads";
-import { dashboardRpc, issueRpc, searchRpc, type DashboardResult } from "../shared/rpc";
+import { changesRpc, dashboardRpc, issueRpc, searchRpc, type DashboardResult } from "../shared/rpc";
 import {
   dashboardRefreshRevision,
   issueFocusRevision,
@@ -20,6 +22,7 @@ import {
 import { ALL_WORK, buildBoard, type BoardFilter } from "./board";
 import { BoardView } from "./board-view";
 import { authorityLabel, authorityTone, errorLabel, relativeAge, toneColor } from "./format";
+import { isNewer, startChangePolling } from "./live";
 import { OverviewView } from "./overview-view";
 import { buildProject, isParked, workIn, workTracks, type ProjectModel } from "./project";
 import {
@@ -74,6 +77,7 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   const fetchDashboard = useRpc(dashboardRpc);
   const fetchSearch = useRpc(searchRpc);
   const fetchIssue = useRpc(issueRpc);
+  const fetchChanges = useRpc(changesRpc);
 
   const [selectedId, setSelectedId] = useState<Selection>(null);
   const [queryText, setQueryText] = useState("");
@@ -173,6 +177,43 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
   }, [listIdentity]);
 
   const data = dashboard.data ?? null;
+
+  // Live refresh: while the shown snapshot comes from a live bd workspace, ask
+  // the server every few seconds whether its journal moved, and re-read when it
+  // did. A poll that is not live ends polling until the next snapshot, which is
+  // manual Refresh as before. Refs keep the poller from restarting on renders.
+  const shownToken = data?.changes.live === true ? data.changes.token : null;
+  const [lostLive, setLostLive] = useState<{ readonly token: string; readonly reason: ChangeReason } | null>(null);
+  const live = shownToken !== null && lostLive?.token !== shownToken;
+  const liveReason: ChangeReason | null =
+    data === null
+      ? null
+      : live
+        ? "live"
+        : lostLive !== null && lostLive.token === shownToken
+          ? lostLive.reason
+          : data.changes.reason;
+  const pollRefs = useRef({ fetchChanges, dashboard, issue, selectedId });
+  pollRefs.current = { fetchChanges, dashboard, issue, selectedId };
+  useEffect(() => {
+    if (!live || shownToken === null) return;
+    return startChangePolling({
+      intervalMs: CHANGE_POLL_MS,
+      check: () => pollRefs.current.fetchChanges({ workspaceId }),
+      onResult: (state) => {
+        if (!state.live) {
+          setLostLive({ token: shownToken, reason: state.reason });
+          return;
+        }
+        const current = pollRefs.current;
+        if (!isNewer(state, shownToken) || current.dashboard.isFetching) return;
+        forceDashboardRefresh.current = true;
+        void current.dashboard.refetch({ cancelRefetch: false });
+        if (current.selectedId !== null) void current.issue.refetch();
+      },
+    });
+  }, [live, shownToken, workspaceId]);
+
   const authority = data?.source?.authority ?? null;
   const railTone = data === null ? "neutral" : data.tool.available ? authorityTone(authority) : "danger";
 
@@ -219,10 +260,12 @@ function BeadsWorkspacePanel({ theme, layout, workspaceId }: PluginWorkspacePane
       project.truncated ? "some closed issues not loaded" : null,
       age === null ? null : `read ${age}${data.cached ? " (cached)" : ""}`,
       authorityTone(authority) === "success" ? null : `source ${authorityLabel(authority)}`,
+      liveReason === "live" ? "Live" : null,
+      liveReason === "journal-off" ? "for live: bd config set events-journal true" : null,
     ]
       .filter((part): part is string => part !== null && part.length > 0)
       .join("  ·  ");
-  }, [dashboard.isPending, data, project, workspaceName, workspaceId]);
+  }, [dashboard.isPending, data, project, workspaceName, workspaceId, liveReason]);
 
   const refreshButton = (
     <Pressable

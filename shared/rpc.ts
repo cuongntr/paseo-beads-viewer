@@ -6,6 +6,7 @@ import {
   ATTACHMENT_RESULT_LIMIT,
   BlockerSchema,
   BoardSnapshotSchema,
+  ChangeStateSchema,
   CommandErrorSchema,
   IssueDetailSchema,
   IssueIdSchema,
@@ -61,9 +62,22 @@ export const dashboardRpc = defineRpc({
       alerts: SectionStateSchema,
       graph: SectionStateSchema,
     }),
+    /** The journal position this snapshot was read at, for live workspaces. */
+    changes: ChangeStateSchema,
     fetchedAt: z.string(),
     cached: z.boolean(),
   }),
+});
+
+/**
+ * One cheap journal check per call, never the bv pipeline. The panel polls it
+ * only while the dashboard it shows says the workspace is live, and reloads
+ * when the token differs from the dashboard's.
+ */
+export const changesRpc = defineRpc({
+  name: "beads.changes",
+  input: WorkspaceInputSchema,
+  output: ChangeStateSchema,
 });
 
 export const searchRpc = defineRpc({

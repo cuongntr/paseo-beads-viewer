@@ -65,9 +65,40 @@ React Native primitives exclusively.
 `bv` is the single analysis authority. The plugin computes no graph, readiness, or cycle
 information of its own, and never parses `.beads/*.jsonl` or the Beads database.
 
+### Live refresh (bd events journal)
+
+A `bd` 1.3+ workspace whose user turned the events journal on (`bd config set events-journal
+true`) refreshes itself. Everything else, `br`, older `bd`, journal off, or any failure, keeps
+manual Refresh and the short cache. The Paseo plugin API has no server push, so the panel asks.
+
+- `server/changes.ts` keeps one checkpoint per workspace and directory: the last journal record
+  a dashboard load accounted for, identified by seq, timestamp, op and issue id, because each
+  clone counts its own seq.
+- A dashboard load on `bd` reads `bd --readonly config get events-journal --json`, and when on,
+  finds the head by streaming `bd --readonly events tail --since 0 --json` once, keeping only the
+  last record (bd has no head query). A pruned journal answers that read with
+  `events_journal_truncated`, which names the head; the record there is then read with
+  `--limit 1`. Later loads read the journal before running `bv`, so a snapshot is never older
+  than its token, and keep that reading unless the checkpoint went stale or the database moved.
+  The resulting `changes: {live, reason, token}` rides on the dashboard.
+- `beads.changes` is the poll: one `bd --readonly events tail --since <checkpoint-1> --json`,
+  shared by concurrent callers, never `bv`. Starting at the checkpoint record itself proves it
+  still exists: if it is missing or a different record (clone switch, reset, restore) or the read
+  is truncated, the checkpoint is marked stale and the token moves, so the panel reloads and that
+  load re-baselines. A seq above the head would otherwise read as "nothing new" forever. Records
+  after the checkpoint move the token; nothing after it keeps the token.
+- The panel polls every 5 s (`CHANGE_POLL_MS`) only while the snapshot it shows says `live`,
+  one request at a time, and stops on unmount, on a workspace change, or at the first answer
+  that is not live. A different token forces a dashboard read past the cache and re-reads the
+  open issue. The status line ends in `Live`, or on a `bd` workspace with the journal off, in
+  `for live: bd config set events-journal true`.
+- Limits: a poll read is capped at 5 s and 16 MiB (more is treated as a bulk change); the
+  baseline at 30 s and 512 MiB streamed, holding at most one 64 KiB line prefix in memory.
+  `bd dolt pull` changes are not journaled and do not refresh the panel.
+
 ## Contracts
 
-Four RPCs, all defined in `shared/rpc.ts` with Zod input and output schemas validated on both
+Five RPCs, all defined in `shared/rpc.ts` with Zod input and output schemas validated on both
 sides.
 
 | RPC | Input | Output shape |
@@ -76,6 +107,7 @@ sides.
 | `beads.search` | `workspaceId`, bounded `query`, optional bounded `limit` | echoed query and limit, normalized results, nullable error |
 | `beads.issue` | `workspaceId`, pattern-checked `issueId` | tracker state, nullable normalized detail, nullable error |
 | `beads.attachments.search` | `query` | at most 8 attachment items |
+| `beads.changes` | `workspaceId` | `live`, `reason` (`live`, `journal-off`, `not-bd`, `unavailable`), opaque `token` |
 
 Design rules that make these forward-compatible:
 
@@ -109,6 +141,7 @@ The subprocess boundary is the security-relevant surface. `server/command.ts` ow
 | Leaked processes | Live children tracked in a module set and killed by plugin cleanup. |
 | Unbounded fanout | Attachment search scans ≤12 workspaces, searches ≤4, with concurrency 2, and performs ≤8 detail reads with concurrency 3. |
 | Stale analysis served as current | Only normalized results cached, expiry-only invalidation (15 s dashboard, 2 min tracker identity and route). The cache key includes workspace id and directory. No derived graph cached. Source freshness and `data_hash` shown in the UI. |
+| Journal reads | `bd --db <validated-route> --readonly config get events-journal --json` and `bd --db <validated-route> --readonly events tail --since <n> [--limit 1] --json`; `n` is a number the server computed. The plugin never enables, prunes or configures the journal and starts no long-lived `--follow` child. |
 | Mutation | No mutation API exists. The tracker is invoked only with `show`; `bv` calls are serialized because `bv` may refresh `bd`'s compatibility export. |
 
 Error mapping is deliberately non-lossy: a timeout, a non-zero exit, an oversized output, and
@@ -290,6 +323,7 @@ All tests run without a Beads repository. `bv` and the tracker CLIs are never re
 | Command safety (`tests/command.test.ts`) | Argv allowlist assertions; shell metacharacters proven to stay inside one argv value; query/limit bound clamping; issue-id and flag-shaped-id rejection before spawn; executable-name rejection. |
 | Command error mapping | Real `node -e` child processes prove literal-argv handling, cwd honouring, timeout kill, output-cap kill, and non-zero exit capture; `interpretJsonOutcome` asserted for every error code. |
 | Dashboard assembly (`tests/dashboard.test.ts`) | `bv` mocked at the command boundary with a fake Paseo API. Asserts healthy assembly, per-section degradation, provenance from a partial read, missing project, unavailable `bv` short-circuit, unresolved workspace short-circuit, and cache hit/no-cache-on-degraded behaviour. |
+| Live refresh (`tests/changes.test.ts`, `tests/journal.test.ts`, `tests/live.test.ts`) | A fake journal drives the checkpoint: journal off, `br`, baseline and change, idle stability, truncation, clone switch below the head and with a different record at the same seq, a moved database, failures and throws, bulk change, shared concurrent polls, cleanup. A fake `bd` executable proves streamed reads with cut lines, the off note, the truncated error, the byte cap and literal argv. Fake timers prove the client poller never overlaps, stops at a non-live answer, and stops for good on unmount. |
 | Handlers (`tests/handlers.test.ts`) | Search sanitisation and error passthrough; tracker detection and refusal to guess; attachment `.beads` filtering, URL/resourceType/snapshot content, per-workspace failure isolation, result bounding and deduplication, and blank-query and list-failure short-circuits. |
 | Client presentation (`tests/format.test.ts`) | Authority tone and label across complete/partial/failed/not-claim-safe sources; priority tone mapping; Lucide status icon and status label mapping including unknown values; status and severity tone mapping; relative age; distinct message per error code. |
 | Markdown subset (`tests/markdown.test.ts`) | Block and inline parsing for every supported construct; malformed and unclosed emphasis, code, links, and fences degrading to plain text; adversarial marker soup proven not to throw; character, line, block, code-line, inline-segment, and nesting bounds asserted against the exported constants. |

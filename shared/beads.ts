@@ -263,6 +263,25 @@ export const TrackerStateSchema = z.object({
 });
 export type TrackerState = z.output<typeof TrackerStateSchema>;
 
+/**
+ * Whether the panel can follow changes on its own. Only a `bd` workspace with
+ * its events journal on is `live`; `journal-off` is the one state worth a hint,
+ * and every other reason means manual Refresh, as before.
+ */
+export const ChangeReasonSchema = z.enum(["live", "journal-off", "not-bd", "unavailable"]);
+export type ChangeReason = z.output<typeof ChangeReasonSchema>;
+
+export const ChangeStateSchema = z.object({
+  live: z.boolean(),
+  reason: ChangeReasonSchema,
+  /** Opaque; a different token means the journal moved since the last one. */
+  token: z.string().nullable(),
+});
+export type ChangeState = z.output<typeof ChangeStateSchema>;
+
+/** How often an open panel asks whether a live workspace changed. */
+export const CHANGE_POLL_MS = 5_000;
+
 export const IssueRefSchema = z.object({
   id: z.string(),
   title: z.string().nullable(),
